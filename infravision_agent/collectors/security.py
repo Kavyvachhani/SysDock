@@ -25,85 +25,38 @@ def _run(cmd, timeout=8):
         return "", -1
 
 
-# ---- Falco -----------------------------------------------------------------
+# ---- UFW (Uncomplicated Firewall) --------------------------------------------
 
-def get_falco_status():
+def get_ufw_status():
     result = {
-        "installed":      False,
-        "running":        False,
-        "container_id":   None,
-        "recent_events":  [],
+        "installed": False,
+        "active":    False,
+        "rules":     [],
     }
-
-    # Method 1: docker-py
-    try:
-        import docker
-        client = docker.from_env()
-        for c in client.containers.list(all=True):
-            img  = c.attrs.get("Config", {}).get("Image", "")
-            name = c.name.lower()
-            if "falco" in img.lower() or "falco" in name:
-                result["installed"]     = True
-                result["container_id"]  = c.short_id
-                result["container_name"]= c.name
-                result["status"]        = c.attrs.get("State", {}).get("Status", "unknown")
-                result["running"]       = result["status"] == "running"
-                if result["running"]:
-                    try:
-                        logs = c.logs(tail=50, timestamps=True).decode("utf-8", errors="replace")
-                        result["recent_events"] = _parse_falco_logs(logs)[:20]
-                    except Exception as e:
-                        result["log_error"] = str(e)
-                return result
-    except Exception:
-        pass
-
-    # Method 2: docker CLI
-    out, rc = _run(["docker", "ps", "-a", "--format", "{{.ID}} {{.Names}} {{.Image}} {{.Status}}"])
-    if rc == 0:
-        for line in out.strip().split("\n"):
-            parts = line.split()
-            if len(parts) < 3:
+    
+    out, rc = _run(["sudo", "ufw", "status", "numbered"], timeout=5)
+    if rc != 0:
+        out, rc = _run(["ufw", "status", "numbered"], timeout=5)
+        
+    if rc != 0:
+        return result
+        
+    result["installed"] = True
+    result["active"] = "Status: active" in out
+    
+    if result["active"]:
+        rules = []
+        for line in out.split("\n"):
+            line = line.strip()
+            if not line or line.startswith("Status:") or line.startswith("To"):
                 continue
-            cid, name, image = parts[0], parts[1], parts[2]
-            status_str = " ".join(parts[3:]) if len(parts) > 3 else ""
-            if "falco" in name.lower() or "falco" in image.lower():
-                result["installed"]      = True
-                result["container_id"]   = cid
-                result["container_name"] = name
-                result["status"]         = status_str
-                result["running"]        = status_str.lower().startswith("up")
-                if result["running"]:
-                    logs, _ = _run(["docker", "logs", "--tail", "50", "--timestamps", cid])
-                    result["recent_events"] = _parse_falco_logs(logs)[:20]
-                return result
-
-    # Method 3: check falco as a systemd service
-    _, rc = _run(["systemctl", "is-active", "falco"])
-    if rc == 0:
-        result["installed"] = True
-        result["running"]   = True
-        result["via"]       = "systemd"
-        logs, _ = _run(["journalctl", "-u", "falco", "-n", "50", "--no-pager"])
-        result["recent_events"] = _parse_falco_logs(logs)[:20]
-
+            if "--" in line:
+                continue
+            if "ALLOW" in line or "DENY" in line:
+                rules.append(line)
+        result["rules"] = rules[:10]
+        
     return result
-
-
-def _parse_falco_logs(raw):
-    events = []
-    pat = re.compile(r"(\d{4}-\d{2}-\d{2}T[\d:.]+Z?)\s+(\w+)\s+(.*)")
-    for line in raw.strip().split("\n"):
-        line = line.strip()
-        if not line:
-            continue
-        m = pat.match(line)
-        if m:
-            ts, level, msg = m.groups()
-            events.append({"timestamp": ts, "level": level.upper(), "message": msg.strip()})
-        else:
-            events.append({"timestamp": None, "level": "INFO", "message": line})
-    return events
 
 
 # ---- SSH auth events -------------------------------------------------------
@@ -272,7 +225,7 @@ def get_who():
 
 def collect_all():
     return {
-        "falco":          get_falco_status(),
+        "ufw":            get_ufw_status(),
         "ssh_events":     get_ssh_auth_events(),
         "fail2ban":       get_fail2ban_status(),
         "open_ports":     get_open_ports(),

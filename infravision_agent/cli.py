@@ -202,7 +202,6 @@ def _print_rich(data):
     if "processes" in data:
         procs = data["processes"].get("top_by_cpu", [])[:12]
         t = Table(box=box.ROUNDED, title="Top Processes (CPU)", title_style="bold blue")
-        t.add_column("PID",     justify="right", style="dim")
         t.add_column("User",    width=12)
         t.add_column("CPU%",    justify="right")
         t.add_column("MEM%",    justify="right")
@@ -211,7 +210,6 @@ def _print_rich(data):
         t.add_column("Command")
         for p in procs:
             t.add_row(
-                str(p["pid"]),
                 (p.get("user") or "?")[:12],
                 _pct_color(p["cpu_pct"]),
                 _pct_color(p["mem_pct"]),
@@ -356,16 +354,23 @@ def install(port, host):
 def uninstall():
     """Remove the SysDock systemd service (requires root)."""
     if os.geteuid() != 0:
-        console.print("[red]Run as root: sudo sysdock uninstall[/red]")
+        console.print("[red]Run as root to remove the service: sudo sysdock uninstall[/red]")
         sys.exit(1)
+    
     for cmd in [["systemctl", "stop", "sysdock"], ["systemctl", "disable", "sysdock"]]:
         subprocess.run(cmd, capture_output=True)
+    
     svc = "/etc/systemd/system/sysdock.service"
     if os.path.exists(svc):
         os.remove(svc)
         subprocess.run(["systemctl", "daemon-reload"])
-    console.print("[green]✓  SysDock service removed[/green]")
-
+        
+    console.print(Panel.fit(
+        "[bold green]✓  SysDock service removed successfully[/bold green]\n\n"
+        "[dim]To completely remove the package, run as your normal user:[/dim]\n"
+        "  pipx uninstall sysdock",
+        title="SysDock Uninstall", border_style="green"
+    ))
 
 def main():
     cli()

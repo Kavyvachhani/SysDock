@@ -263,12 +263,29 @@ def _collect_cli():
                     mem_val = float(mem_str)
                 except ValueError:
                     mem_val = 0.0
+                # Parse "10MiB / 1GiB" into float megabytes
+                mem_usage_str = s.get("mem_usage", "")
+                mem_used_mb = 0.0
+                try:
+                    first_part = mem_usage_str.split("/")[0].strip()
+                    if "GiB" in first_part:
+                        mem_used_mb = float(first_part.replace("GiB", "").strip()) * 1024
+                    elif "MiB" in first_part:
+                        mem_used_mb = float(first_part.replace("MiB", "").strip())
+                    elif "KiB" in first_part:
+                        mem_used_mb = float(first_part.replace("KiB", "").strip()) / 1024
+                    elif "B" in first_part:
+                        mem_used_mb = float(first_part.replace("B", "").strip()) / (1024**2)
+                except Exception:
+                    pass
+
                 stats_map[name] = {
-                    "cpu_pct":   cpu_val,
-                    "mem_pct":   mem_val,
-                    "mem_usage": s.get("mem_usage", ""),
-                    "net_io":    s.get("net_io", ""),
-                    "pids":      s.get("pids", ""),
+                    "cpu_pct":     cpu_val,
+                    "mem_pct":     mem_val,
+                    "mem_usage":   mem_usage_str,
+                    "mem_used_mb": mem_used_mb,
+                    "net_io":      s.get("net_io", ""),
+                    "pids":        s.get("pids", ""),
                 }
             except Exception:
                 pass

@@ -295,7 +295,6 @@ def _proc_panel(proc_d):
     summary = proc_d.get("summary", {})
     t = Table(box=box.SIMPLE, show_header=True, header_style="bold dim",
               show_edge=False, padding=(0, 1))
-    t.add_column("PID",  justify="right", width=7)
     t.add_column("User", width=10)
     t.add_column("S",    width=2)
     t.add_column("CPU%", justify="right", width=6)
@@ -307,9 +306,8 @@ def _proc_panel(proc_d):
         cpu = float(p.get("cpu_pct") or 0)
         mem = float(p.get("mem_pct") or 0)
         sc  = sc_map.get(p.get("status", ""), "?")
-        cmd = (p.get("cmd") or p.get("name", "?"))[:48]
+        cmd = (p.get("cmd") or p.get("name", "?"))[:49]
         t.add_row(
-            str(p["pid"]),
             _clamp(p.get("user") or "?", 10),
             Text(sc, style="bold green" if sc == "R" else "dim"),
             Text("{:.1f}".format(cpu), style=_pct_style(cpu)),
@@ -349,7 +347,6 @@ def _docker_panel(dkr_d):
     t.add_column("CPU%",  justify="right", width=7)
     t.add_column("MEM",   justify="right", width=9)
     t.add_column("MEM%",  justify="right", width=6)
-    t.add_column("PIDs",  justify="right", width=5)
     t.add_column("Net↓",  justify="right", width=7)
     t.add_column("Net↑",  justify="right", width=7)
 
@@ -379,7 +376,6 @@ def _docker_panel(dkr_d):
             Text("{:.1f}".format(cpu), style=_pct_style(cpu)) if is_run else Text("—",  "dim"),
             Text(mem_u)                                         if is_run else Text("—",  "dim"),
             Text("{:.1f}".format(mem), style=_pct_style(mem)) if is_run else Text("—",  "dim"),
-            str(stats.get("pids", "—"))                         if is_run else Text("—",  "dim"),
             Text("{:.2f}M".format(float(rx or 0)), style="cyan")  if rx is not None else Text("—", "dim"),
             Text("{:.2f}M".format(float(tx or 0)), style="green") if tx is not None else Text("—", "dim"),
         )
@@ -405,28 +401,29 @@ def _docker_panel(dkr_d):
 # ── Security panel ────────────────────────────────────────────────────────────
 
 def _sec_panel(sec_d):
-    falco  = sec_d.get("falco", {})
+    ufw    = sec_d.get("ufw", {})
     events = sec_d.get("ssh_events", [])
     t = Table.grid(padding=(0, 1))
     t.add_column(width=12)
     t.add_column()
-    falco_st = (Text("● RUN",  style="bold green") if falco.get("running")
-                else Text("○ STOP", style="bold red") if falco.get("installed")
-                else Text("⊘ N/A", style="dim"))
-    t.add_row(Text("Falco:",  style="bold"), falco_st)
-    for ev in (falco.get("recent_events") or [])[:2]:
-        lvl = ev.get("level", "")
-        col = "red" if "CRIT" in lvl or "ERR" in lvl else "yellow"
-        t.add_row(Text("  " + (ev.get("timestamp") or "")[-8:], "dim"),
-                  Text(ev.get("message", "")[:48], style=col))
+    
+    ufw_st = (Text("● ACTIVE",  style="bold green") if ufw.get("active")
+              else Text("○ INACTIVE", style="dim") if ufw.get("installed")
+              else Text("⊘ N/A", style="dim"))
+    t.add_row(Text("UFW:",  style="bold"), ufw_st)
+    
+    for rule in (ufw.get("rules") or [])[:5]:
+        t.add_row(Text(""), Text(rule, style="cyan"))
+        
     fails = sum(1 for e in events if e.get("type") == "ssh_fail")
     ok    = sum(1 for e in events if e.get("type") == "ssh_success")
     t.add_row(Text("SSH fail:", style="bold"), Text(str(fails), style="bold red" if fails else "green"))
     t.add_row(Text("SSH ok:",   style="bold"), Text(str(ok), style="green"))
+    
     f2b = sec_d.get("fail2ban", {})
     t.add_row(Text("fail2ban:", style="bold"),
               Text("active", "green") if f2b.get("installed") else Text("off", "dim"))
-    return Panel(t, title="[bold]Security[/bold]", border_style="red")
+    return Panel(t, title="[bold]Security / Firewall[/bold]", border_style="red")
 
 
 # ── State / background loop ───────────────────────────────────────────────────
