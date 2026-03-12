@@ -131,52 +131,58 @@ def get_cpu(interval=1.0):
 
 def get_memory():
     """
-    Parse /proc/meminfo directly — most reliable across distros.
-    'used' = total - free - buffers - cached (htop formula).
+    Parse /proc/meminfo — exact htop v3 formula:
+        cache  = Cached + SReclaimable - Shmem
+        used   = MemTotal - MemFree - Buffers - cache
+
+    The Shmem subtraction is the key fix: Shmem (shared/tmpfs memory) lives
+    inside the Cached counter but is actively used, NOT reclaimable.  Without
+    this correction 'used' reads LOWER than htop reports.
     """
     result = {
-        "total_mb": 0, "available_mb": 0, "used_mb": 0, "free_mb": 0,
-        "cached_mb": 0, "buffers_mb": 0, "percent": 0.0,
-        "swap_total_mb": 0, "swap_used_mb": 0, "swap_percent": 0.0,
+        "total_mb": 0, "available_mb": 0, "used_mb":  0,   "free_mb":     0,
+        "cached_mb": 0, "buffers_mb":  0, "shmem_mb": 0,   "percent":     0.0,
+        "swap_total_mb": 0, "swap_used_mb": 0, "swap_free_mb": 0, "swap_percent": 0.0,
     }
-
     try:
         info = {}
         with open("/proc/meminfo") as f:
             for line in f:
                 parts = line.split()
                 if len(parts) >= 2:
-                    key = parts[0].rstrip(":")
-                    info[key] = int(parts[1])
+                    info[parts[0].rstrip(":")] = int(parts[1])
 
-        total   = info.get("MemTotal",     0)
-        free    = info.get("MemFree",      0)
-        buffers = info.get("Buffers",      0)
-        # htop counts Cached + SReclaimable as "cached"
-        cached  = info.get("Cached", 0) + info.get("SReclaimable", 0)
-        # htop formula: used = total - free - buffers - cached
-        used    = max(0, total - free - buffers - cached)
-        # MemAvailable is a kernel estimate of how much can be freed
-        avail   = info.get("MemAvailable", free + buffers + cached)
+        total        = info.get("MemTotal",     0)
+        free         = info.get("MemFree",      0)
+        buffers      = info.get("Buffers",      0)
+        page_cache   = info.get("Cached",       0)  # page cache only
+        sreclaimable = info.get("SReclaimable", 0)  # reclaimable slab
+        shmem        = info.get("Shmem",        0)  # shared/tmpfs — subtract!
 
-        result["total_mb"]     = round(total   / 1024, 1)
-        result["free_mb"]      = round(free    / 1024, 1)
-        result["buffers_mb"]   = round(buffers / 1024, 1)
-        result["cached_mb"]    = round(cached  / 1024, 1)
-        result["available_mb"] = round(avail   / 1024, 1)
-        result["used_mb"]      = round(used    / 1024, 1)
-        # Percentage: how much of total is in active use (htop style)
+        # htop v3 exact: buff/cache = page_cache + SReclaimable - Shmem
+        cache_eff = page_cache + sreclaimable - shmem
+        used      = max(0, total - free - buffers - cache_eff)
+        avail     = info.get("MemAvailable", free + cache_eff + buffers)
+
+        to_mb = lambda kb: round(kb / 1024, 1)
+        result["total_mb"]     = to_mb(total)
+        result["free_mb"]      = to_mb(free)
+        result["buffers_mb"]   = to_mb(buffers)
+        result["cached_mb"]    = to_mb(cache_eff)   # what htop calls buff/cache
+        result["shmem_mb"]     = to_mb(shmem)
+        result["available_mb"] = to_mb(avail)
+        result["used_mb"]      = to_mb(used)
         result["percent"]      = round(100.0 * used / total, 1) if total else 0.0
 
         swap_total = info.get("SwapTotal", 0)
         swap_free  = info.get("SwapFree",  0)
         swap_used  = swap_total - swap_free
-        result["swap_total_mb"] = round(swap_total / 1024, 1)
-        result["swap_used_mb"]  = round(swap_used  / 1024, 1)
+        result["swap_total_mb"] = to_mb(swap_total)
+        result["swap_used_mb"]  = to_mb(swap_used)
+        result["swap_free_mb"]  = to_mb(swap_free)
         result["swap_percent"]  = round(100.0 * swap_used / swap_total, 1) if swap_total else 0.0
     except Exception:
         pass
-
     return result
 
 
