@@ -29,7 +29,7 @@ from rich import box
 console = Console()
 
 TOOL_NAME = "SysDock"
-VERSION   = "1.1.0"
+VERSION   = "1.2.1"
 
 logging.basicConfig(
     level=logging.INFO,
