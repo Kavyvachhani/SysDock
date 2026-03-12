@@ -37,7 +37,7 @@ jobs:
     name: Publish to PyPI
     needs: build
     runs-on: ubuntu-latest
-    environment: SysDock          # matches the Environment name on PyPI Trusted Publisher form
+    environment: sysdock          # matches the Environment name on PyPI Trusted Publisher form
 
     # Required for PyPI Trusted Publisher (OIDC — no API token needed)
     permissions:
