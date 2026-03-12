@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sysdock"
-version = "1.1.0"
+version = "1.2.0"
 description = "SysDock — Linux / EC2 monitoring agent with live terminal dashboard and Docker metrics"
 readme = "README.md"
 license = { text = "MIT" }
@@ -39,8 +39,8 @@ all    = ["docker>=5.0.0", "flask>=2.0"]
 sysdock = "infravision_agent.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/your-org/sysdock"
-Issues   = "https://github.com/your-org/sysdock/issues"
+Homepage = "https://github.com/Kavyvachhani/SysDock"
+Issues   = "https://github.com/Kavyvachhani/SysDock/issues"
 
 [tool.setuptools.packages.find]
 where   = ["."]

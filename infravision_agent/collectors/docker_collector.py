@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json as _json
 import subprocess
+import re
 from datetime import datetime
 
 
@@ -25,6 +26,35 @@ def _run(cmd, timeout=15):
         return "", 127
     except Exception:
         return "", -1
+
+
+def _parse_docker_df():
+    """
+    Run `docker system df` and return structured sizes.
+    Returns dict: {images_size, containers_size, volumes_size, build_cache_size} or {}.
+    """
+    out, rc = _run(["docker", "system", "df"], timeout=10)
+    if rc != 0 or not out:
+        return {}
+    result = {}
+    for line in out.splitlines():
+        low = line.lower()
+        # Match lines like: "Images   5   5   2.3GB   0B (0%)"
+        # Extract the RECLAIMABLE column (4th field) as 'size'
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        # Size is 3rd column (index 3) for docker system df
+        size_val = parts[3] if len(parts) > 3 else parts[-1]
+        if "image" in low:
+            result["images_size"] = size_val
+        elif "container" in low:
+            result["containers_size"] = size_val
+        elif "volume" in low:
+            result["volumes_size"] = size_val
+        elif "build" in low:
+            result["build_cache_size"] = size_val
+    return result
 
 
 def _docker_reachable():
@@ -171,7 +201,8 @@ def _collect_sdk(client):
     except Exception:
         pass
 
-    df_out, _ = _run(["docker", "system", "df"])
+    df_disk = _parse_docker_df()
+    version_info["disk_usage"] = df_disk
 
     return {
         "available":  True,
@@ -180,7 +211,6 @@ def _collect_sdk(client):
         "containers": sorted(containers, key=lambda x: x.get("name", "")),
         "images":     images,
         "volumes":    volumes,
-        "disk_usage": df_out or None,
     }
 
 
@@ -287,7 +317,8 @@ def _collect_cli():
     version_info["running_containers"] = sum(1 for c in containers if c.get("state") == "running")
     version_info["total_images"]       = len(images)
 
-    df_out, _ = _run(["docker", "system", "df"])
+    df_disk = _parse_docker_df()
+    version_info["disk_usage"] = df_disk
 
     return {
         "available":  True,
@@ -296,7 +327,6 @@ def _collect_cli():
         "containers": containers,
         "images":     images,
         "volumes":    [],
-        "disk_usage": df_out or None,
     }
 
 

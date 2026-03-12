@@ -1,0 +1,22 @@
+# Python build artifacts — never commit these
+dist/
+build/
+*.egg-info/
+__pycache__/
+*.pyc
+*.pyo
+.eggs/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

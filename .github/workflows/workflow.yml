@@ -3,7 +3,7 @@ name: Publish SysDock to PyPI
 on:
   push:
     tags:
-      - "v*.*.*"        # triggers on tags like v1.1.0, v2.0.0, etc.
+      - "v*.*.*"        # triggers on tags like v1.2.0, v2.0.0, etc.
   release:
     types: [published]  # also triggers when a GitHub Release is published
 
@@ -23,6 +23,9 @@ jobs:
 
       - name: Install build tools
         run: pip install build
+
+      - name: Clean old dist files (prevent stale wheels from being uploaded)
+        run: rm -rf dist/
 
       - name: Build wheel and sdist
         run: python -m build
@@ -52,3 +55,5 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
