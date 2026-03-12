@@ -6,7 +6,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="sysdock",
-    version="1.2.5",
+    version="1.2.6",
     description="SysDock — Linux / EC2 monitoring agent with live terminal dashboard and Docker metrics",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
