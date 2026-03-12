@@ -28,7 +28,7 @@ from infravision_agent.collectors import (
 
 console = Console()
 TOOL_NAME = "SysDock"
-VERSION   = "1.2.2"
+VERSION   = "1.2.4"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
