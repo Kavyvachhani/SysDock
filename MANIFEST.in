@@ -1,0 +1,5 @@
+include README.md
+include LICENSE
+include install.sh
+include SETUP_GUIDE.md
+recursive-include infravision_agent *.py
