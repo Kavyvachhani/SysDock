@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: sysdock          # matches the Environment name on PyPI Trusted Publisher form
 
-    # Required for PyPI Trusted Publisher (OIDC — no API token needed)
+    # Required for PyPI Trusted Publisher (OIDC â€” no API token needed)
     permissions:
       id-token: write
 
