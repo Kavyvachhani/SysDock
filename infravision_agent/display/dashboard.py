@@ -480,16 +480,10 @@ class _State:
         self._sec_tick = 0
         self.version   = 0
 
-    def update(self, key, fn):
-        try:
-            val = fn()
-            with self.lock:
-                self.data[key] = val
-                self.version += 1
-        except Exception as exc:
-            with self.lock:
-                self.data[key] = {"error": str(exc)}
-                self.version += 1
+    def update(self, key, val):
+        with self.lock:
+            self.data[key] = val
+            self.version += 1
 
     def snapshot(self):
         with self.lock:
@@ -551,11 +545,19 @@ def _render(state):
     # Adaptive lengths
     layout = Layout()
     layout.split_column(
-        Layout(name="hdr",    size=3),
+        Layout(name="hdr",    size=4),
         Layout(name="top",    ratio=3 if term_h > 40 else 2),
         Layout(name="middle", ratio=2),
         Layout(name="bottom", ratio=3),
     )
+    
+    # Ensure no debug lines are visible
+    for name in ["hdr", "top", "middle", "bottom"]:
+        layout[name].debug = False
+
+    layout["hdr"].update(_header(sys_d))
+    layout["hdr"].debug = False
+
     top = layout["top"]
     gpus = sys_d.get("gpu", [])
     
@@ -570,10 +572,14 @@ def _render(state):
             Layout(_cpu_panel(sys_d, dkr_d, show_cores=show_cores)),
             Layout(_mem_panel(sys_d, dkr_d)),
         )
+    
+    for l in top.children: l.debug = False
+
     layout["middle"].split_row(
         Layout(_disk_panel(dsk_d, dkr_d)),
         Layout(_net_panel(net_d)),
     )
+    for l in layout["middle"].children: l.debug = False
     
     btm = layout["bottom"]
     ai_procs = prc_d.get("ai_processes", [])
@@ -590,20 +596,30 @@ def _render(state):
             Layout(_docker_panel(dkr_d, max_dkr), ratio=5),
             Layout(_sec_panel(sec_d),             ratio=2),
         )
+    for l in btm.children: l.debug = False
         
     return layout
 
 
 def _bg_loop(state, refresh):
     while state.running:
-        state.update("system",    _sys.collect_all)   # blocks ~1s for CPU sampling
-        state.update("disk",      _disk.collect_all)
-        state.update("processes", _proc.collect_all)
-        state.update("network",   _net.collect_all)
-        state.update("docker",    _docker.collect_all)
+        # Batch collect all data to prevent partial-update flickering
+        new_data = {
+            "system":    _sys.collect_all(),
+            "disk":      _disk.collect_all(),
+            "processes": _proc.collect_all(),
+            "network":   _net.collect_all(),
+            "docker":    _docker.collect_all(),
+        }
         state._sec_tick += 1
         if state._sec_tick % 5 == 1:
-            state.update("security", _sec.collect_all)
+            new_data["security"] = _sec.collect_all()
+        
+        # Atomic swap
+        with state.lock:
+            state.data.update(new_data)
+            state.version += 1
+            
         time.sleep(max(0, refresh - 1.0))
 
 
