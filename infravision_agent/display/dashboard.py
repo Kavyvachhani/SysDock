@@ -465,14 +465,18 @@ class _State:
         self.lock      = threading.RLock()
         self.running   = False
         self._sec_tick = 0
+        self.version   = 0
 
     def update(self, key, fn):
         try:
+            val = fn()
             with self.lock:
-                self.data[key] = fn()
+                self.data[key] = val
+                self.version += 1
         except Exception as exc:
             with self.lock:
                 self.data[key] = {"error": str(exc)}
+                self.version += 1
 
     def snapshot(self):
         with self.lock:
@@ -602,10 +606,19 @@ def run_dashboard(refresh=3.0):
     bg.start()
 
     try:
-        with Live(_render(state), refresh_per_second=2, screen=True, console=console, auto_refresh=False) as live:
+        # Optimization: Use a higher refresh_per_second but only update manually
+        # to ensure no partial draws or aggressive clearing.
+        with Live(_render(state), refresh_per_second=10, screen=True, console=console, auto_refresh=False) as live:
+            last_version = -1
             while True:
-                live.update(_render(state), refresh=True)
-                time.sleep(0.5)
+                # Only re-render if state data actually changed
+                with state.lock:
+                    current_version = state.version
+                
+                if current_version != last_version:
+                    live.update(_render(state), refresh=True)
+                    last_version = current_version
+                time.sleep(0.1)
     except KeyboardInterrupt:
         pass
     finally:

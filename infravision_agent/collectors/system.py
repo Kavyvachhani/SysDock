@@ -340,12 +340,18 @@ def get_temperatures():
 
 def get_gpu():
     try:
-        # Avoid shell=True for security. Simple list of args.
+        cmd = "nvidia-smi"
+        if os.name == 'nt' and not any(os.path.exists(os.path.join(p, "nvidia-smi.exe")) for p in os.environ.get("PATH", "").split(os.pathsep)):
+            # Try common NVIDIA path if not in system PATH
+            nv_path = r"C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe"
+            if os.path.exists(nv_path):
+                cmd = nv_path
+
         out_raw = subprocess.check_output(
-            ["nvidia-smi", "--query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu", "--format=csv,noheader,nounits"],
+            [cmd, "--query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu", "--format=csv,noheader,nounits"],
             timeout=2, stderr=subprocess.STDOUT
         )
-        out = out_raw.decode("utf-8").strip()
+        out = out_raw.decode("utf-8", errors="ignore").strip()
         if not out:
             return []
         gpus = []
