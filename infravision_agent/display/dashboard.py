@@ -604,21 +604,24 @@ def _render(state):
 def _bg_loop(state, refresh):
     while state.running:
         # Batch collect all data to prevent partial-update flickering
-        new_data = {
-            "system":    _sys.collect_all(),
-            "disk":      _disk.collect_all(),
-            "processes": _proc.collect_all(),
-            "network":   _net.collect_all(),
-            "docker":    _docker.collect_all(),
-        }
-        state._sec_tick += 1
-        if state._sec_tick % 5 == 1:
-            new_data["security"] = _sec.collect_all()
-        
-        # Atomic swap
-        with state.lock:
-            state.data.update(new_data)
-            state.version += 1
+        try:
+            new_data = {
+                "system":    _sys.collect_all(),
+                "disk":      _disk.collect_all(),
+                "processes": _proc.collect_all(),
+                "network":   _net.collect_all(),
+                "docker":    _docker.collect_all(),
+            }
+            state._sec_tick += 1
+            if state._sec_tick % 5 == 1:
+                new_data["security"] = _sec.collect_all()
+            
+            # Atomic swap
+            with state.lock:
+                state.data.update(new_data)
+                state.version += 1
+        except Exception:
+            pass
             
         time.sleep(max(0, refresh - 1.0))
 
@@ -637,7 +640,11 @@ def run_dashboard(refresh=3.0):
         ("docker",    _docker.collect_all),
         ("security",  _sec.collect_all),
     ]:
-        state.update(key, fn)
+        try:
+            val = fn()
+            state.update(key, val)
+        except Exception:
+            state.update(key, {})
 
     state.running = True
     bg = threading.Thread(target=_bg_loop, args=(state, refresh), daemon=True)
