@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import threading
 import time
+import os
 from datetime import datetime
 
 from rich.console import Console
@@ -124,14 +125,6 @@ def _cpu_panel(sys_d, dkr_d, show_cores=True):
     global_t.add_column(width=8, justify="right")
 
     global_t.add_row(Text("ALL", style="bold"), _bar(total, 26), Text("{:5.1f}%".format(total), style=_pct_style(total)))
-    
-    gpus = sys_d.get("gpu", [])
-    if gpus:
-        for g in gpus[:2]:
-            u = float(g.get("gpu_util_pct", 0))
-            name = "G-" + str(g.get("id", "0"))
-            global_t.add_row(Text(name, style="bold cyan"), _bar(u, 26), Text("{:5.1f}%".format(u), style=_pct_style(u)))
-    
     main_grid.add_row(global_t)
 
     # Section 2: Per-Core (if showing)
@@ -139,14 +132,12 @@ def _cpu_panel(sys_d, dkr_d, show_cores=True):
         cores = cpu.get("usage_per_core", [])
         core_grid = Table.grid(expand=True, padding=(0, 2))
         core_grid.add_column(); core_grid.add_column()
-        
+        # ... abbreviated ...
         num_cores = len(cores)
         rows_needed = (num_cores + 1) // 2
-        
         for r in range(rows_needed):
             c1_idx = r
             c2_idx = r + rows_needed
-            
             row_items = []
             if c1_idx < num_cores:
                 p1 = float(cores[c1_idx] or 0)
@@ -160,10 +151,9 @@ def _cpu_panel(sys_d, dkr_d, show_cores=True):
         main_grid.add_row(Panel(core_grid, title="[dim]Per-Core Usage[/dim]", border_style="dim"))
 
     # Section 3: Attribution
-    attr_t = Table.grid(padding=(0, 1), expand=True)
-    attr_t.add_column(width=6); attr_t.add_column(ratio=1); attr_t.add_column(width=8, justify="right")
-    
     if dkr_cpu > 0:
+        attr_t = Table.grid(padding=(0, 1), expand=True)
+        attr_t.add_column(width=6); attr_t.add_column(ratio=1); attr_t.add_column(width=8, justify="right")
         attr_t.add_row(Text("🐳", style="cyan"), _bar(min(100.0, dkr_cpu), 26), Text("~{:.1f}%".format(dkr_cpu), style="cyan"))
         attr_t.add_row(Text("OS", style="dim"), _bar(min(100.0, sys_cpu), 26), Text("~{:.1f}%".format(sys_cpu), style="dim"))
         main_grid.add_row(Text(""))
@@ -171,17 +161,40 @@ def _cpu_panel(sys_d, dkr_d, show_cores=True):
 
     # Bottom summary
     main_grid.add_row(Text(""))
-    summary = Text(f"{model} | {logical} logical / {phys} physical", style="dim", justify="center")
+    summary = Text(f"{model} | {logical}L/{phys}P cores", style="dim", justify="center")
     main_grid.add_row(summary)
 
     return Panel(
         main_grid,
-        title="[bold cyan]CPU & GPU[/bold cyan]  [dim]usr {:.1f}%  sys {:.1f}%  iowait {:.1f}%[/dim]".format(
-              float(cpu.get("user_pct") or 0),
-              float(cpu.get("system_pct") or 0),
-              float(cpu.get("iowait_pct") or 0)),
+        title="[bold cyan]CPU Usage[/bold cyan]  [dim]usr {:.1f}%  sys {:.1f}%[/dim]".format(
+              float(cpu.get("user_pct") or 0), float(cpu.get("system_pct") or 0)),
         border_style="cyan",
     )
+
+
+def _gpu_panel(sys_d):
+    gpus = sys_d.get("gpu", [])
+    if not gpus:
+        return Panel(Align.center(Text("No NVIDIA GPU detected", style="dim")), title="[bold cyan]GPU Monitoring[/bold cyan]", border_style="cyan")
+    
+    t = Table.grid(padding=(0, 1), expand=True)
+    t.add_column(width=6); t.add_column(ratio=1); t.add_column(width=8, justify="right")
+    
+    for g in gpus[:1]: # Show first GPU in detail
+        u = float(g.get("gpu_util_pct", 0))
+        m_used = g.get("mem_used_mb", 0)
+        m_total = g.get("mem_total_mb", 0)
+        m_pct = g.get("mem_pct", 0)
+        temp = g.get("temp_c", 0)
+        
+        t.add_row(Text("Load", style="bold"), _bar(u, 18, 70, 90), Text("{:5.1f}%".format(u), style=_pct_style(u)))
+        t.add_row(Text("Mem", style="bold"), _bar(m_pct, 18, 80, 90), Text("{:5.1f}%".format(m_pct), style=_pct_style(m_pct)))
+        t.add_row(Text("Temp", style="bold"), _bar(min(100, temp), 18, 75, 85), Text("{:.0f}°C".format(temp), style="yellow"))
+        t.add_row(Text(""))
+        t.add_row(Text("Name", style="dim"), Text(f"{g.get('name')[:20]}", style="dim"))
+        t.add_row(Text("VRAM", style="dim"), Text(f"{m_used:.0f}/{m_total:.0f} MB", style="dim"))
+
+    return Panel(t, title=f"[bold cyan]GPU - {gpus[0].get('id', '0')}[/bold cyan]", border_style="cyan")
 
 
 # ── Memory panel ──────────────────────────────────────────────────────────────
@@ -543,11 +556,20 @@ def _render(state):
         Layout(name="middle", ratio=2),
         Layout(name="bottom", ratio=3),
     )
-    layout["hdr"].update(_header(sys_d))
-    layout["top"].split_row(
-        Layout(_cpu_panel(sys_d, dkr_d, show_cores=show_cores)),
-        Layout(_mem_panel(sys_d, dkr_d)),
-    )
+    top = layout["top"]
+    gpus = sys_d.get("gpu", [])
+    
+    if gpus:
+        top.split_row(
+            Layout(_cpu_panel(sys_d, dkr_d, show_cores=show_cores), ratio=3),
+            Layout(_gpu_panel(sys_d), ratio=2),
+            Layout(_mem_panel(sys_d, dkr_d), ratio=3),
+        )
+    else:
+        top.split_row(
+            Layout(_cpu_panel(sys_d, dkr_d, show_cores=show_cores)),
+            Layout(_mem_panel(sys_d, dkr_d)),
+        )
     layout["middle"].split_row(
         Layout(_disk_panel(dsk_d, dkr_d)),
         Layout(_net_panel(net_d)),
@@ -606,18 +628,27 @@ def run_dashboard(refresh=3.0):
     bg.start()
 
     try:
-        # Optimization: Use a higher refresh_per_second but only update manually
-        # to ensure no partial draws or aggressive clearing.
-        with Live(_render(state), refresh_per_second=10, screen=True, console=console, auto_refresh=False) as live:
+        # Stabilization for Windows terminals: 
+        # - disable Alt Screen to stop 'automatic erasing' flicker
+        # - use a very steady refresh cycle
+        is_windows = (os.name == 'nt')
+        
+        # Initial render to clear the old screen state
+        if is_windows:
+            console.clear()
+
+        with Live(_render(state), refresh_per_second=10, screen=not is_windows, console=console, auto_refresh=False) as live:
             last_version = -1
             while True:
-                # Only re-render if state data actually changed
                 with state.lock:
                     current_version = state.version
                 
+                # Update only when new data is ready
                 if current_version != last_version:
                     live.update(_render(state), refresh=True)
                     last_version = current_version
+                
+                # Steady heartbeat sleep
                 time.sleep(0.1)
     except KeyboardInterrupt:
         pass
