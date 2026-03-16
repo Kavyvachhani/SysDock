@@ -29,6 +29,7 @@ import json
 import logging
 import socket
 import sys
+import os
 import threading
 import time
 from datetime import datetime, timezone
@@ -183,6 +184,16 @@ class _Handler(BaseHTTPRequestHandler):
 
     # ── GET dispatcher ────────────────────────────────────────────────────────
     def do_GET(self):
+        token = os.environ.get("SYSDOCK_TOKEN")
+        if token:
+            auth_header = self.headers.get("Authorization")
+            if not auth_header or auth_header != f"Bearer {token}":
+                self.send_response(401)
+                self.send_header("WWW-Authenticate", 'Bearer realm="SysDock"')
+                self.end_headers()
+                self.wfile.write(b'{"error": "Unauthorized"}')
+                return
+
         try:
             parsed = urlparse(self.path)
             path   = parsed.path.rstrip("/") or "/"

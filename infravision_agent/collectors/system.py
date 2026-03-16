@@ -16,6 +16,7 @@ import os
 import time
 import platform
 import socket
+import subprocess
 from datetime import datetime, timedelta
 
 try:
@@ -144,6 +145,22 @@ def get_memory():
         "cached_mb": 0, "buffers_mb":  0, "shmem_mb": 0,   "percent":     0.0,
         "swap_total_mb": 0, "swap_used_mb": 0, "swap_free_mb": 0, "swap_percent": 0.0,
     }
+    
+    if os.name == "nt" and _HAS_PSUTIL:
+        try:
+            mem = _psutil.virtual_memory()
+            swap = _psutil.swap_memory()
+            to_mb = lambda x: round(x / 1024 / 1024, 1)
+            return {
+                "total_mb": to_mb(mem.total), "available_mb": to_mb(mem.available),
+                "used_mb":  to_mb(mem.used),   "free_mb":     to_mb(mem.free),
+                "cached_mb": 0, "buffers_mb":  0, "shmem_mb": 0, "percent": mem.percent,
+                "swap_total_mb": to_mb(swap.total), "swap_used_mb": to_mb(swap.used),
+                "swap_free_mb": to_mb(swap.free), "swap_percent": swap.percent,
+            }
+        except Exception:
+            pass
+            
     try:
         info = {}
         with open("/proc/meminfo") as f:
@@ -190,6 +207,17 @@ def get_memory():
 
 def get_load():
     try:
+        if hasattr(os, "getloadavg"):
+            l1, l5, l15 = os.getloadavg()
+            cores = _safe(lambda: _psutil.cpu_count(logical=True)) or 1
+            return {
+                "load1": round(l1, 2), "load5": round(l5, 2), "load15": round(l15, 2),
+                "load1_normalized": round(l1 / cores, 2),
+            }
+    except Exception:
+        pass
+
+    try:
         with open("/proc/loadavg") as f:
             parts = f.read().split()
         l1, l5, l15 = float(parts[0]), float(parts[1]), float(parts[2])
@@ -213,6 +241,22 @@ def get_load():
 # ── Uptime ───────────────────────────────────────────────────────────────────
 
 def get_uptime():
+    if _HAS_PSUTIL:
+        try:
+            boot_ts = _psutil.boot_time()
+            uptime_sec = time.time() - boot_ts
+            td = timedelta(seconds=int(uptime_sec))
+            d = td.days
+            h, r = divmod(td.seconds, 3600)
+            m, s = divmod(r, 60)
+            return {
+                "boot_time":      datetime.fromtimestamp(boot_ts).isoformat(),
+                "uptime_seconds": int(uptime_sec),
+                "uptime_human":   "{}d {}h {}m {}s".format(d, h, m, s),
+            }
+        except Exception:
+            pass
+
     try:
         with open("/proc/uptime") as f:
             uptime_sec = float(f.read().split()[0])
@@ -233,19 +277,22 @@ def get_uptime():
 # ── Hostname / OS ─────────────────────────────────────────────────────────────
 
 def get_hostname():
-    os_name = "Unknown Linux"
-    for path in ("/etc/os-release", "/usr/lib/os-release"):
-        try:
-            with open(path) as f:
-                for line in f:
-                    if line.startswith("PRETTY_NAME="):
-                        os_name = line.split("=", 1)[1].strip().strip('"')
-                        break
-            break
-        except Exception:
-            continue
+    os_name = "Unknown OS"
+    if os.name == 'nt':
+        os_name = f"Windows {platform.release()}"
+    else:
+        for path in ("/etc/os-release", "/usr/lib/os-release"):
+            try:
+                with open(path) as f:
+                    for line in f:
+                        if line.startswith("PRETTY_NAME="):
+                            os_name = line.split("=", 1)[1].strip().strip('"')
+                            break
+                break
+            except Exception:
+                continue
 
-    if os_name == "Unknown Linux":
+    if os_name == "Unknown OS":
         try:
             os_name = platform.platform()
         except Exception:
@@ -254,7 +301,7 @@ def get_hostname():
     try:
         hostname = socket.gethostname()
     except Exception:
-        hostname = os.environ.get("HOSTNAME", "unknown")
+        hostname = os.environ.get("HOSTNAME", os.environ.get("COMPUTERNAME", "unknown"))
 
     return {
         "hostname":       hostname,
@@ -289,6 +336,37 @@ def get_temperatures():
         return []
 
 
+# ── GPUs ──────────────────────────────────────────────────────────────────────
+
+def get_gpu():
+    try:
+        # Avoid shell=True for security. Simple list of args.
+        out_raw = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu", "--format=csv,noheader,nounits"],
+            timeout=2, stderr=subprocess.STDOUT
+        )
+        out = out_raw.decode("utf-8").strip()
+        if not out:
+            return []
+        gpus = []
+        for line in out.splitlines():
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) >= 6:
+                mem_used = float(parts[3]) if parts[3].replace(".","").isdigit() else 0.0
+                mem_total = float(parts[4]) if parts[4].replace(".","").isdigit() else 0.0
+                gpus.append({
+                    "id": parts[0],
+                    "name": parts[1].replace("NVIDIA ", "").replace("GeForce ", ""),
+                    "gpu_util_pct": float(parts[2]) if parts[2].replace(".","").isdigit() else 0.0,
+                    "mem_used_mb": mem_used,
+                    "mem_total_mb": mem_total,
+                    "mem_pct": float(round((mem_used / mem_total) * 100, 1)) if mem_total else 0.0,
+                    "temp_c": float(parts[5]) if parts[5].replace(".","").isdigit() else 0.0,
+                })
+        return gpus
+    except Exception:
+        return []
+
 # ── Collect ───────────────────────────────────────────────────────────────────
 
 def collect_all():
@@ -299,5 +377,6 @@ def collect_all():
         "load":         get_load(),
         "uptime":       get_uptime(),
         "temperatures": get_temperatures(),
+        "gpu":          get_gpu(),
         "collected_at": datetime.utcnow().isoformat() + "Z",
     }

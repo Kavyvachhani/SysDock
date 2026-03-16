@@ -6,9 +6,9 @@ from setuptools import setup, find_packages
 
 setup(
     name="sysdock",
-    version="1.2.7",
+    version="1.2.8",
     description="SysDock — Modern Linux monitoring agent with live terminal dashboard and Docker metrics",
-    long_description=open("README.md").read(),
+    long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     url="https://github.com/Kavyvachhani/SysDock",
     project_urls={

@@ -28,7 +28,7 @@ from infravision_agent.collectors import (
 
 console = Console()
 TOOL_NAME = "SysDock"
-VERSION   = "1.2.7"
+VERSION   = "1.2.8"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -99,11 +99,14 @@ def _header(sys_d):
 
 # ── CPU panel ─────────────────────────────────────────────────────────────────
 
-def _cpu_panel(sys_d, dkr_d):
+def _cpu_panel(sys_d, dkr_d, show_cores=True):
     cpu   = sys_d.get("cpu", {})
     total = float(cpu.get("usage_total") or 0)
+    logical = cpu.get("logical_cores") or "?"
+    phys    = cpu.get("physical_cores") or "?"
+    model   = cpu.get("model") or "CPU"
 
-    # Docker-attributed CPU: sum cpu_pct of running containers
+    # Docker-attributed CPU
     dkr_cpu = 0.0
     if dkr_d.get("available"):
         for c in dkr_d.get("containers", []):
@@ -111,45 +114,73 @@ def _cpu_panel(sys_d, dkr_d):
                 dkr_cpu += float((c.get("stats") or {}).get("cpu_pct") or 0)
     sys_cpu = max(0.0, total - dkr_cpu)
 
-    t = Table.grid(padding=(0, 1))
-    t.add_column(width=6)
-    t.add_column()
-    t.add_column(width=8, justify="right")
+    # Main vertical grid for the whole panel
+    main_grid = Table.grid(padding=(0, 0), expand=True)
+    
+    # Section 1: Global Stats
+    global_t = Table.grid(padding=(0, 1), expand=True)
+    global_t.add_column(width=6)
+    global_t.add_column(ratio=1)
+    global_t.add_column(width=8, justify="right")
 
-    t.add_row(Text("ALL", style="bold"), _bar(total, 26), Text("{:.1f}%".format(total), style=_pct_style(total)))
-    for i, pct in enumerate(cpu.get("usage_per_core", [])):
-        pct = float(pct or 0)
-        t.add_row(Text("{:2d}".format(i), style="dim"), _bar(pct, 26), Text("{:.1f}%".format(pct), style=_pct_style(pct)))
+    global_t.add_row(Text("ALL", style="bold"), _bar(total, 26), Text("{:5.1f}%".format(total), style=_pct_style(total)))
+    
+    gpus = sys_d.get("gpu", [])
+    if gpus:
+        for g in gpus[:2]:
+            u = float(g.get("gpu_util_pct", 0))
+            name = "G-" + str(g.get("id", "0"))
+            global_t.add_row(Text(name, style="bold cyan"), _bar(u, 26), Text("{:5.1f}%".format(u), style=_pct_style(u)))
+    
+    main_grid.add_row(global_t)
 
-    # Load attribution bar
-    ncores = max(1, cpu.get("logical_cores") or 1)
-    t.add_row(Text(""))
-    # Docker load bar
+    # Section 2: Per-Core (if showing)
+    if show_cores:
+        cores = cpu.get("usage_per_core", [])
+        core_grid = Table.grid(expand=True, padding=(0, 2))
+        core_grid.add_column(); core_grid.add_column()
+        
+        num_cores = len(cores)
+        rows_needed = (num_cores + 1) // 2
+        
+        for r in range(rows_needed):
+            c1_idx = r
+            c2_idx = r + rows_needed
+            
+            row_items = []
+            if c1_idx < num_cores:
+                p1 = float(cores[c1_idx] or 0)
+                row_items.extend([Text("{:2d} ".format(c1_idx), style="dim"), _bar(p1, 10), Text(" {:>5.1f}%".format(p1), style=_pct_style(p1))])
+            if c2_idx < num_cores:
+                p2 = float(cores[c2_idx] or 0)
+                row_items.extend([Text("  {:2d} ".format(c2_idx), style="dim"), _bar(p2, 10), Text(" {:>5.1f}%".format(p2), style=_pct_style(p2))])
+            core_grid.add_row(*row_items)
+            
+        main_grid.add_row(Text("")) 
+        main_grid.add_row(Panel(core_grid, title="[dim]Per-Core Usage[/dim]", border_style="dim"))
+
+    # Section 3: Attribution
+    attr_t = Table.grid(padding=(0, 1), expand=True)
+    attr_t.add_column(width=6); attr_t.add_column(ratio=1); attr_t.add_column(width=8, justify="right")
+    
     if dkr_cpu > 0:
-        t.add_row(
-            Text("🐳", style="cyan"),
-            _bar(min(100.0, dkr_cpu), 26),
-            Text("~{:.1f}%".format(dkr_cpu), style="cyan"),
-        )
-        t.add_row(
-            Text("OS", style="dim"),
-            _bar(min(100.0, sys_cpu), 26, 50, 85),
-            Text("~{:.1f}%".format(sys_cpu), style="dim"),
-        )
+        attr_t.add_row(Text("🐳", style="cyan"), _bar(min(100.0, dkr_cpu), 26), Text("~{:.1f}%".format(dkr_cpu), style="cyan"))
+        attr_t.add_row(Text("OS", style="dim"), _bar(min(100.0, sys_cpu), 26), Text("~{:.1f}%".format(sys_cpu), style="dim"))
+        main_grid.add_row(Text(""))
+        main_grid.add_row(attr_t)
 
-    freq = cpu.get("freq_mhz")
-    sub = "[dim]{} | {} logical / {} phys | {}MHz[/dim]".format(
-          cpu.get("model", "?")[:30],
-          cpu.get("logical_cores", "?"),
-          cpu.get("physical_cores", "?"),
-          freq or "?")
+    # Bottom summary
+    main_grid.add_row(Text(""))
+    summary = Text(f"{model} | {logical} logical / {phys} physical", style="dim", justify="center")
+    main_grid.add_row(summary)
+
     return Panel(
-        t,
-        title="[bold]CPU[/bold]  [dim]usr {:.1f}%  sys {:.1f}%  iowait {:.1f}%[/dim]".format(
+        main_grid,
+        title="[bold cyan]CPU & GPU[/bold cyan]  [dim]usr {:.1f}%  sys {:.1f}%  iowait {:.1f}%[/dim]".format(
               float(cpu.get("user_pct") or 0),
               float(cpu.get("system_pct") or 0),
               float(cpu.get("iowait_pct") or 0)),
-        subtitle=sub, border_style="blue",
+        border_style="cyan",
     )
 
 
@@ -176,7 +207,7 @@ def _mem_panel(sys_d, dkr_d):
     t.add_row(
         Text("RAM", style="bold"),
         _bar(rp, 20),
-        Text("{} / {}  {:.1f}%".format(_mb(m.get("used_mb")), _mb(m.get("total_mb")), rp),
+        Text("{} / {} {:5.1f}%".format(_mb(m.get("used_mb")), _mb(m.get("total_mb")), rp),
              style=_pct_style(rp)),
     )
 
@@ -184,7 +215,7 @@ def _mem_panel(sys_d, dkr_d):
     t.add_row(
         Text("SWP", style="bold"),
         _bar(sp, 20, 50, 80),
-        Text("{} / {}  {:.1f}%".format(_mb(m.get("swap_used_mb")), _mb(m.get("swap_total_mb")), sp),
+        Text("{} / {} {:5.1f}%".format(_mb(m.get("swap_used_mb")), _mb(m.get("swap_total_mb")), sp),
              style=_pct_style(sp, 50, 80)),
     )
 
@@ -233,7 +264,7 @@ def _disk_panel(disk_d, dkr_d):
             "{:.1f}G".format(p.get("used_gb", 0)),
             "{:.1f}G".format(p.get("free_gb", 0)),
             "{:.1f}G".format(p.get("total_gb", 0)),
-            Text("{:.0f}%".format(pct), style=_pct_style(pct, 75, 90)),
+            Text("{:>4.0f}%".format(pct), style=_pct_style(pct, 75, 90)),
         )
 
     # Docker disk usage (docker system df)
@@ -290,7 +321,7 @@ def _net_panel(net_d):
 
 # ── Process panel ─────────────────────────────────────────────────────────────
 
-def _proc_panel(proc_d):
+def _proc_panel(proc_d, limit=14):
     procs   = proc_d.get("top_by_cpu", [])
     summary = proc_d.get("summary", {})
     t = Table(box=box.SIMPLE, show_header=True, header_style="bold dim",
@@ -302,7 +333,7 @@ def _proc_panel(proc_d):
     t.add_column("RSS",  justify="right", width=7)
     t.add_column("Command")
     sc_map = {"sleeping": "S", "running": "R", "zombie": "Z", "stopped": "T", "disk-sleep": "D"}
-    for p in procs[:14]:
+    for p in procs[:limit]:
         cpu = float(p.get("cpu_pct") or 0)
         mem = float(p.get("mem_pct") or 0)
         sc  = sc_map.get(p.get("status", ""), "?")
@@ -310,8 +341,8 @@ def _proc_panel(proc_d):
         t.add_row(
             _clamp(p.get("user") or "?", 10),
             Text(sc, style="bold green" if sc == "R" else "dim"),
-            Text("{:.1f}".format(cpu), style=_pct_style(cpu)),
-            Text("{:.1f}".format(mem), style=_pct_style(mem)),
+            Text("{:5.1f}".format(cpu), style=_pct_style(cpu)),
+            Text("{:5.1f}".format(mem), style=_pct_style(mem)),
             _mb(p.get("rss_mb")),
             cmd,
         )
@@ -324,7 +355,7 @@ def _proc_panel(proc_d):
 
 # ── Docker panel (adaptive) ────────────────────────────────────────────────────
 
-def _docker_panel(dkr_d):
+def _docker_panel(dkr_d, limit=14):
     if not dkr_d.get("available"):
         return Panel(
             Align.center(Text("⊘  " + dkr_d.get("error", "Docker not available"), style="dim")),
@@ -350,7 +381,7 @@ def _docker_panel(dkr_d):
     t.add_column("Net↓",  justify="right", width=7)
     t.add_column("Net↑",  justify="right", width=7)
 
-    for c in containers[:14]:
+    for c in containers[:limit]:
         state  = c.get("state") or c.get("status", "?")
         is_run = (state == "running")
         stats  = c.get("stats") or {}
@@ -373,9 +404,9 @@ def _docker_panel(dkr_d):
             _clamp(c.get("name",  "?"), name_w),
             _clamp(c.get("image", "?"), image_w),
             st_text,
-            Text("{:.1f}".format(cpu), style=_pct_style(cpu)) if is_run else Text("—",  "dim"),
+            Text("{:5.1f}".format(cpu), style=_pct_style(cpu)) if is_run else Text("—",  "dim"),
             Text(mem_u)                                         if is_run else Text("—",  "dim"),
-            Text("{:.1f}".format(mem), style=_pct_style(mem)) if is_run else Text("—",  "dim"),
+            Text("{:5.1f}".format(mem), style=_pct_style(mem)) if is_run else Text("—",  "dim"),
             Text("{:.2f}M".format(float(rx or 0)), style="cyan")  if rx is not None else Text("—", "dim"),
             Text("{:.2f}M".format(float(tx or 0)), style="green") if tx is not None else Text("—", "dim"),
         )
@@ -448,6 +479,30 @@ class _State:
             return dict(self.data)
 
 
+def _ai_panel(proc_d):
+    ai_procs = proc_d.get("ai_processes", [])
+    if not ai_procs:
+        return Panel(Align.center(Text("No AI services detected", style="dim")), title="[bold]AI / Ollama[/bold]", border_style="dim")
+        
+    t = Table(box=box.SIMPLE, show_header=True, header_style="bold dim", show_edge=False, padding=(0, 1))
+    t.add_column("Service", width=12, style="cyan")
+    t.add_column("Status", width=8)
+    t.add_column("CPU%", justify="right", width=6)
+    t.add_column("MEM", justify="right", width=7)
+    
+    for p in ai_procs[:6]:
+        cpu = float(p.get("cpu_pct") or 0)
+        mem_pct = float(p.get("mem_pct") or 0)
+        sc = "R" if str(p.get("status")) in ("running", "R") else "S"
+        t.add_row(
+            _clamp(p.get("name", "?"), 12),
+            Text("● run", style="bold green") if sc == "R" else Text("○ " + str(p.get("status", "S"))[:4], style="dim"),
+            Text("{:5.1f}".format(cpu), style=_pct_style(cpu)),
+            _mb(p.get("rss_mb"))
+        )
+    return Panel(t, title="[bold]AI / LLM[/bold]", border_style="magenta")
+
+
 def _render(state):
     d    = state.snapshot()
     sys_d = d.get("system",    {})
@@ -457,29 +512,59 @@ def _render(state):
     dkr_d = d.get("docker",    {})
     sec_d = d.get("security",  {})
 
+    term_h = console.height
+    term_w = console.width
+
+    show_cores = term_h >= 28  # Lower threshold for showing cores
+    
+    # Calculate how many cores we can actually fit
+    # Header(3) + TopRow(CPU/Mem) + MidRow(Disk/Net) + BtmRow(Proc/Dkr/Sec)
+    # Available height for per-core bars in TopRow panel:
+    # If term_h is small, we hide cores to prevent scrolling.
+    # We can fit about (term_h - 18) cores if we allow the panel to expand.
+    
+    cpu_cores_count = len(sys_d.get("cpu", {}).get("usage_per_core", []))
+    if show_cores and cpu_cores_count > (term_h - 22):
+        # Still show some cores even if we can't show all
+        pass 
+
+    max_procs = max(3, (term_h - 22) // 3) if term_h >= 24 else 3
+    max_dkr   = max_procs
+
+    # Adaptive lengths
     layout = Layout()
     layout.split_column(
         Layout(name="hdr",    size=3),
-        Layout(name="top",    size=13),
-        Layout(name="middle", size=15),
-        Layout(name="bottom"),
+        Layout(name="top",    ratio=3 if term_h > 40 else 2),
+        Layout(name="middle", ratio=2),
+        Layout(name="bottom", ratio=3),
     )
     layout["hdr"].update(_header(sys_d))
-    # Pass docker data to CPU and memory panels for attribution bars
     layout["top"].split_row(
-        Layout(_cpu_panel(sys_d, dkr_d)),
+        Layout(_cpu_panel(sys_d, dkr_d, show_cores=show_cores)),
         Layout(_mem_panel(sys_d, dkr_d)),
     )
-    # Pass docker data to disk panel for Docker storage info
     layout["middle"].split_row(
         Layout(_disk_panel(dsk_d, dkr_d)),
         Layout(_net_panel(net_d)),
     )
-    layout["bottom"].split_row(
-        Layout(_proc_panel(prc_d),   ratio=2),
-        Layout(_docker_panel(dkr_d), ratio=3),
-        Layout(_sec_panel(sec_d),    ratio=1),
-    )
+    
+    btm = layout["bottom"]
+    ai_procs = prc_d.get("ai_processes", [])
+    
+    if ai_procs:
+        btm.split_row(
+            Layout(_proc_panel(prc_d, max_procs), ratio=4),
+            Layout(_docker_panel(dkr_d, max_dkr), ratio=4),
+            Layout(_ai_panel(prc_d),              ratio=3),
+        )
+    else:
+        btm.split_row(
+            Layout(_proc_panel(prc_d, max_procs), ratio=4),
+            Layout(_docker_panel(dkr_d, max_dkr), ratio=5),
+            Layout(_sec_panel(sec_d),             ratio=2),
+        )
+        
     return layout
 
 
@@ -517,10 +602,10 @@ def run_dashboard(refresh=3.0):
     bg.start()
 
     try:
-        with Live(_render(state), refresh_per_second=1, screen=True, console=console) as live:
+        with Live(_render(state), refresh_per_second=2, screen=True, console=console, auto_refresh=False) as live:
             while True:
-                live.update(_render(state))
-                time.sleep(1.0)
+                live.update(_render(state), refresh=True)
+                time.sleep(0.5)
     except KeyboardInterrupt:
         pass
     finally:

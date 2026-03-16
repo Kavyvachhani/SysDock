@@ -29,7 +29,7 @@ from rich import box
 console = Console()
 
 TOOL_NAME = "SysDock"
-VERSION   = "1.2.7"
+VERSION   = "1.2.8"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -273,10 +273,10 @@ def check():
         ("docker-py (opt)", lambda: __import__("docker").__version__),
         ("/proc filesystem",lambda: open("/proc/cpuinfo").read(1) and "present"),
         ("df command",      lambda: subprocess.run(["df", "--version"], capture_output=True).returncode == 0 and "ok"),
-        ("ss command",      lambda: subprocess.run(["ss", "--version"], capture_output=True).returncode == 0 and "ok"),
+        ("ss command",      lambda: subprocess.run(["ss", "--version"], capture_output=True).returncode == 0 and "ok" if os.name != 'nt' else "N/A on Windows"),
         ("Docker daemon",   lambda: subprocess.run(["docker", "info"], capture_output=True, timeout=4).returncode == 0 and "running"),
-        ("systemd",         lambda: os.path.exists("/run/systemd") and "present"),
-        ("fail2ban",        lambda: subprocess.run(["which", "fail2ban-client"], capture_output=True).returncode == 0 and "installed"),
+        ("systemd",         lambda: os.path.exists("/run/systemd") and "present" if os.name != 'nt' else "N/A on Windows"),
+        ("fail2ban",        lambda: subprocess.run(["fail2ban-client", "--version"], capture_output=True).returncode == 0 and "installed" if os.name != 'nt' else "N/A on Windows"),
     ]
 
     t = Table(box=box.ROUNDED, title="{} — Dependency Check".format(TOOL_NAME),
@@ -302,6 +302,10 @@ def check():
 @click.option("--host", default="0.0.0.0", show_default=True)
 def install(port, host):
     """Install SysDock as a systemd service (requires root)."""
+    if os.name == 'nt':
+        console.print("[red]Service installation is currently Linux-only.[/red]")
+        sys.exit(1)
+
     if os.geteuid() != 0:
         console.print("[red]Run as root: sudo sysdock install[/red]")
         sys.exit(1)
@@ -353,6 +357,10 @@ def install(port, host):
 @cli.command()
 def uninstall():
     """Remove the SysDock systemd service (requires root)."""
+    if os.name == 'nt':
+        console.print("[red]Service installation is currently Linux-only.[/red]")
+        sys.exit(1)
+
     if os.geteuid() != 0:
         console.print("[red]Run as root to remove the service: sudo sysdock uninstall[/red]")
         sys.exit(1)

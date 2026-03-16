@@ -35,6 +35,9 @@ def _processes_psutil(limit=20, sort_by="cpu"):
     for proc in _psutil.process_iter(attrs):
         try:
             info = proc.info
+            name = info.get("name") or "?"
+            if os.name == 'nt' and name == "System Idle Process":
+                continue
             if info.get("memory_info") is None:
                 continue
             rss_mb = round(info["memory_info"].rss / 1024 ** 2, 1)
@@ -59,10 +62,10 @@ def _processes_psutil(limit=20, sort_by="cpu"):
 
     key = "cpu_pct" if sort_by == "cpu" else "mem_pct"
     procs.sort(key=lambda x: x[key], reverse=True)
-    return procs[:limit]
+    return procs[:limit] if limit else procs
 
 
-def _processes_proc(limit=20):
+def _processes_proc(limit=None):
     """Read /proc/<pid>/stat + /proc/<pid>/status directly."""
     procs = []
     try:
@@ -133,10 +136,10 @@ def _processes_proc(limit=20):
     # After sorting by ticks, reset to a relative indicator
     for p in procs:
         p["cpu_pct"] = 0.0  # ticks aren't percentage; psutil needed for that
-    return procs[:limit]
+    return procs[:limit] if limit else procs
 
 
-def get_processes(limit=20, sort_by="cpu"):
+def get_processes(limit=None, sort_by="cpu"):
     if _HAS_PSUTIL:
         return _processes_psutil(limit=limit, sort_by=sort_by)
     return _processes_proc(limit=limit)
@@ -187,6 +190,21 @@ def get_process_summary():
 # ── Listening ports ──────────────────────────────────────────────────────────
 
 def get_listening_ports():
+    if _HAS_PSUTIL:
+        try:
+            ports = []
+            for c in _psutil.net_connections(kind="inet"):
+                if c.status == "LISTEN":
+                    ip, port = c.laddr
+                    ports.append({
+                        "local_address": "{}:{}".format(ip, port),
+                        "process": str(c.pid) if getattr(c, 'pid', None) else ""
+                    })
+            if ports:
+                return ports
+        except (_psutil.AccessDenied, _psutil.Error, Exception):
+            pass
+
     # Method 1: ss (modern systems)
     out, rc = _run(["ss", "-tlnp"])
     if rc == 0 and out:
@@ -243,10 +261,24 @@ def get_listening_ports():
 # ── Collect ───────────────────────────────────────────────────────────────────
 
 def collect_all():
+    all_procs = get_processes(limit=None, sort_by="cpu")
+    ai_names = ["ollama", "llama-server", "vllm"]
+    ai_procs = []
+    
+    for p in all_procs:
+        p_name = p.get("name", "").lower()
+        p_cmd = p.get("cmd", "").lower()
+        if any(n in p_name or n in p_cmd for n in ai_names):
+            ai_procs.append(p)
+    
+    top_cpu = all_procs[:20]
+    top_mem = sorted(all_procs, key=lambda x: x.get("mem_pct", 0), reverse=True)[:10]
+
     return {
         "summary":         get_process_summary(),
-        "top_by_cpu":      get_processes(limit=20, sort_by="cpu"),
-        "top_by_mem":      get_processes(limit=10, sort_by="mem"),
+        "top_by_cpu":      top_cpu,
+        "top_by_mem":      top_mem,
+        "ai_processes":    ai_procs,
         "listening_ports": get_listening_ports(),
         "collected_at":    datetime.utcnow().isoformat() + "Z",
     }
