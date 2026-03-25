@@ -450,7 +450,7 @@ def _detect_nvidia():
         try:
             out_raw = subprocess.check_output(
                 [cmd,
-                 "--query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu",
+                 "--query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu,driver_version",
                  "--format=csv,noheader,nounits"],
                 timeout=3,
                 stderr=subprocess.DEVNULL,
@@ -473,6 +473,7 @@ def _detect_nvidia():
                         "mem_total_mb": mem_total,
                         "mem_pct":      round((mem_used / mem_total) * 100, 1) if mem_total else 0.0,
                         "temp_c":       float(parts[5]) if parts[5].replace(".", "").isdigit() else 0.0,
+                        "driver_ver":   parts[6] if len(parts) > 6 else "Unknown",
                     })
             if gpus:
                 return gpus
@@ -509,6 +510,7 @@ def _detect_amd():
                 "mem_total_mb": 0.0,
                 "mem_pct":      0.0,
                 "temp_c":       _safe(lambda: float(parts[2].strip().rstrip("c"))) or 0.0,
+                "driver_ver":   "ROCm",
             })
         return gpus
     except Exception:
@@ -555,6 +557,7 @@ def _detect_apple_metal():
             "mem_total_mb": vram_mb,
             "mem_pct":      0.0,
             "temp_c":       0.0,
+            "driver_ver":   platform.mac_ver()[0] if getattr(platform, "mac_ver", None) else "Metal",
         }]
     except Exception:
         return []

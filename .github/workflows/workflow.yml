@@ -82,20 +82,26 @@ jobs:
         with:
           skip-existing: true
 
-  # ── Build Native Executables (macOS / Windows) ──────────────────────────────
+  # ── Build Native Executables (.deb, .pkg, .exe) ─────────────────────────────
   build_exe:
-    name: Build Executables
+    name: Build Native Installers
     needs: test
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
+          - os: ubuntu-latest
+            name: sysdock
+            dist_file: sysdock_linux.deb
+            out_dir: SysDock_Linux
           - os: macos-latest
-            name: SysDock_macOS
-            ext: ""
+            name: sysdock
+            dist_file: SysDock_macOS.pkg
+            out_dir: SysDock_Mac
           - os: windows-latest
             name: SysDock_Windows
-            ext: ".exe"
+            dist_file: SysDock_Windows.exe
+            out_dir: SysDock_Windows
 
     steps:
       - uses: actions/checkout@v4
@@ -106,15 +112,58 @@ jobs:
 
       - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install psutil rich click pyinstaller
           pip install -e .
 
       - name: Build with PyInstaller
         run: pyinstaller --clean -F --name ${{ matrix.name }} --paths . infravision_agent/__main__.py
 
-      - name: Upload Executable Artifact
+      # ----- Linux: Create .deb (dpkg) -----
+      - name: Build Linux .deb package
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          mkdir -p build_deb/usr/local/bin
+          cp dist/${{ matrix.name }} build_deb/usr/local/bin/sysdock
+          chmod +x build_deb/usr/local/bin/sysdock
+          mkdir -p build_deb/DEBIAN
+          cat <<EOF > build_deb/DEBIAN/control
+          Package: sysdock
+          Version: 1.4.4
+          Section: base
+          Priority: optional
+          Architecture: amd64
+          Maintainer: SysDock <info@sysdock.io>
+          Description: SysDock monitoring agent and live dashboard
+          EOF
+          mkdir -p dist/${{ matrix.out_dir }}
+          dpkg-deb --build build_deb dist/${{ matrix.out_dir }}/${{ matrix.dist_file }}
+          echo "Run 'sudo dpkg -i ${{ matrix.dist_file }}' to install natively on Linux." > dist/${{ matrix.out_dir }}/README.txt
+
+      # ----- macOS: Create .pkg installer -----
+      - name: Build macOS .pkg Installer
+        if: matrix.os == 'macos-latest'
+        run: |
+          mkdir -p build_pkg/usr/local/bin
+          cp dist/${{ matrix.name }} build_pkg/usr/local/bin/sysdock
+          chmod +x build_pkg/usr/local/bin/sysdock
+          mkdir -p dist/${{ matrix.out_dir }}
+          pkgbuild --root build_pkg --identifier com.infravision.sysdock --version 1.4.4 dist/${{ matrix.out_dir }}/${{ matrix.dist_file }}
+          echo "Double-click the .pkg file to install SysDock globally on your Mac." > dist/${{ matrix.out_dir }}/README_MAC.txt
+
+      # ----- Windows: Move to folder -----
+      - name: Build Windows Folder
+        if: matrix.os == 'windows-latest'
+        run: |
+          mkdir -p dist/${{ matrix.out_dir }}
+          cp dist/${{ matrix.dist_file }} dist/${{ matrix.out_dir }}/
+          echo "Run the .exe file directly on Windows." > dist/${{ matrix.out_dir }}/README_WINDOWS.txt
+
+      # ----- Upload Native Artifacts -----
+      - name: Upload Installer Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.name }}
-          path: dist/${{ matrix.name }}${{ matrix.ext }}
+          name: ${{ matrix.out_dir }}
+          path: dist/${{ matrix.out_dir }}/
+
 

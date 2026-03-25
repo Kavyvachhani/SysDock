@@ -31,7 +31,7 @@ from infravision_agent.collectors import (
 
 console = Console(force_terminal=True)
 TOOL_NAME = "SysDock"
-VERSION   = "1.4.2"
+VERSION   = "1.4.4"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -195,6 +195,7 @@ def _gpu_panel(sys_d):
         m_tot  = g.get("mem_total_mb", 0)
         m_pct  = g.get("mem_pct", 0)
         temp   = g.get("temp_c", 0)
+        driver_ver = g.get("driver_ver", "Unknown")
 
         if vendor == "Apple":
             # Apple Metal: no real-time utilisation; just show VRAM and name
@@ -215,9 +216,13 @@ def _gpu_panel(sys_d):
                           _bar(min(100, temp), 18, 75, 85),
                           Text("{:.0f}°C".format(temp), style="yellow"))
 
-        if m_tot:
-            t.add_row(Text("VRAM", style="dim"),
-                      Text("{:.0f}/{:.0f} MB".format(m_used, m_tot), style="dim"))
+        if m_tot or driver_ver != "Unknown":
+            sub_text = []
+            if m_tot:
+                sub_text.append("{:.0f}/{:.0f} MB".format(m_used, m_tot))
+            if driver_ver and driver_ver != "Unknown":
+                sub_text.append("Driver: {}".format(driver_ver))
+            t.add_row(Text("Info", style="dim"), Text(" | ".join(sub_text), style="dim"))
         if idx < len(gpus) - 1:
             t.add_row(Text(""))
 
