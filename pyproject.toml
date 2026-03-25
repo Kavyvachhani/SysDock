@@ -4,22 +4,22 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sysdock"
-version = "1.3.3"
-description = "SysDock — Modern Linux monitoring agent with live terminal dashboard and Docker metrics"
+version = "1.4.0"
+description = "SysDock — Modern cross-platform monitoring agent (Linux, macOS, Windows) with live terminal dashboard, GPU metrics and Docker support"
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.6"
+requires-python = ">=3.8"
 keywords = ["monitoring", "metrics", "ec2", "linux", "devops", "docker", "sysadmin", "sysdock"]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.6",
-    "Programming Language :: Python :: 3.7",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
     "Environment :: Console",
     "Topic :: System :: Monitoring",
     "Topic :: System :: Systems Administration",

@@ -13,6 +13,8 @@ import time
 import os
 from datetime import datetime
 
+import sys
+
 from rich.console import Console
 from rich.layout import Layout
 from rich.live import Live
@@ -27,9 +29,9 @@ from infravision_agent.collectors import (
     network as _net, docker_collector as _docker, security as _sec,
 )
 
-console = Console()
+console = Console(force_terminal=True)
 TOOL_NAME = "SysDock"
-VERSION   = "1.3.3"
+VERSION   = "1.4.0"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -175,26 +177,54 @@ def _cpu_panel(sys_d, dkr_d, show_cores=True):
 def _gpu_panel(sys_d):
     gpus = sys_d.get("gpu", [])
     if not gpus:
-        return Panel(Align.center(Text("No NVIDIA GPU detected", style="dim")), title="[bold cyan]GPU Monitoring[/bold cyan]", border_style="cyan")
-    
-    t = Table.grid(padding=(0, 1), expand=True)
-    t.add_column(width=6); t.add_column(ratio=1); t.add_column(width=8, justify="right")
-    
-    for g in gpus[:1]: # Show first GPU in detail
-        u = float(g.get("gpu_util_pct", 0))
-        m_used = g.get("mem_used_mb", 0)
-        m_total = g.get("mem_total_mb", 0)
-        m_pct = g.get("mem_pct", 0)
-        temp = g.get("temp_c", 0)
-        
-        t.add_row(Text("Load", style="bold"), _bar(u, 18, 70, 90), Text("{:5.1f}%".format(u), style=_pct_style(u)))
-        t.add_row(Text("Mem", style="bold"), _bar(m_pct, 18, 80, 90), Text("{:5.1f}%".format(m_pct), style=_pct_style(m_pct)))
-        t.add_row(Text("Temp", style="bold"), _bar(min(100, temp), 18, 75, 85), Text("{:.0f}°C".format(temp), style="yellow"))
-        t.add_row(Text(""))
-        t.add_row(Text("Name", style="dim"), Text(f"{g.get('name')[:20]}", style="dim"))
-        t.add_row(Text("VRAM", style="dim"), Text(f"{m_used:.0f}/{m_total:.0f} MB", style="dim"))
+        return Panel(
+            Align.center(Text("No GPU detected", style="dim")),
+            title="[bold cyan]GPU Monitoring[/bold cyan]",
+            border_style="cyan",
+        )
 
-    return Panel(t, title=f"[bold cyan]GPU - {gpus[0].get('id', '0')}[/bold cyan]", border_style="cyan")
+    t = Table.grid(padding=(0, 1), expand=True)
+    t.add_column(width=6)
+    t.add_column(ratio=1)
+    t.add_column(width=8, justify="right")
+
+    for idx, g in enumerate(gpus[:2]):  # show up to 2 GPUs
+        vendor = g.get("vendor", "GPU")
+        u      = float(g.get("gpu_util_pct", 0))
+        m_used = g.get("mem_used_mb", 0)
+        m_tot  = g.get("mem_total_mb", 0)
+        m_pct  = g.get("mem_pct", 0)
+        temp   = g.get("temp_c", 0)
+
+        if vendor == "Apple":
+            # Apple Metal: no real-time utilisation; just show VRAM and name
+            t.add_row(Text("VRAM", style="bold"),
+                      _bar(m_pct if m_tot else 0, 18, 80, 90),
+                      Text("{:.0f}/{:.0f}M".format(m_used, m_tot) if m_tot else "Shared", style="dim"))
+            t.add_row(Text("Util", style="bold"),
+                      Text("(Metal API — not exposed)", style="dim"))
+        else:
+            t.add_row(Text("Load", style="bold"),
+                      _bar(u, 18, 70, 90),
+                      Text("{:5.1f}%".format(u), style=_pct_style(u)))
+            t.add_row(Text("Mem", style="bold"),
+                      _bar(m_pct, 18, 80, 90),
+                      Text("{:5.1f}%".format(m_pct), style=_pct_style(m_pct)))
+            if temp:
+                t.add_row(Text("Temp", style="bold"),
+                          _bar(min(100, temp), 18, 75, 85),
+                          Text("{:.0f}°C".format(temp), style="yellow"))
+
+        if m_tot:
+            t.add_row(Text("VRAM", style="dim"),
+                      Text("{:.0f}/{:.0f} MB".format(m_used, m_tot), style="dim"))
+        if idx < len(gpus) - 1:
+            t.add_row(Text(""))
+
+    gpu0  = gpus[0]
+    title = "[bold cyan]GPU · {} {}[/bold cyan]".format(
+        gpu0.get("vendor", ""), gpu0.get("name", ""))
+    return Panel(t, title=title, border_style="cyan")
 
 
 # ── Memory panel ──────────────────────────────────────────────────────────────
@@ -602,11 +632,11 @@ def _render(state):
 
 
 def _bg_loop(state, refresh):
+    """Background thread: collects all metrics atomically to prevent partial-frame flicker."""
     while state.running:
-        # Batch collect all data to prevent partial-update flickering
         try:
             new_data = {
-                "system":    _sys.collect_all(),
+                "system":    _sys.collect_all(),    # blocks ~1 s for CPU sampling
                 "disk":      _disk.collect_all(),
                 "processes": _proc.collect_all(),
                 "network":   _net.collect_all(),
@@ -615,23 +645,23 @@ def _bg_loop(state, refresh):
             state._sec_tick += 1
             if state._sec_tick % 5 == 1:
                 new_data["security"] = _sec.collect_all()
-            
-            # Atomic swap
+
+            # One atomic write — version increments ONCE per full cycle
             with state.lock:
                 state.data.update(new_data)
                 state.version += 1
         except Exception:
-            pass
-            
+            pass  # never crash the loop
         time.sleep(max(0, refresh - 1.0))
 
 
 def run_dashboard(refresh=3.0):
-    """Open the live SysDock dashboard. Press Ctrl+C to exit."""
+    """Open the live SysDock dashboard (cross-platform). Ctrl+C to exit."""
     refresh = max(2.0, refresh)
-    console.print("[bold cyan]{} v{} — loading...[/bold cyan]".format(TOOL_NAME, VERSION))
+    console.print("[bold cyan]{} v{} — initialising...[/bold cyan]".format(TOOL_NAME, VERSION))
 
     state = _State()
+    # Warm-up: collect initial data synchronously so the first frame is complete
     for key, fn in [
         ("system",    _sys.collect_all),
         ("disk",      _disk.collect_all),
@@ -641,8 +671,7 @@ def run_dashboard(refresh=3.0):
         ("security",  _sec.collect_all),
     ]:
         try:
-            val = fn()
-            state.update(key, val)
+            state.update(key, fn())
         except Exception:
             state.update(key, {})
 
@@ -650,31 +679,40 @@ def run_dashboard(refresh=3.0):
     bg = threading.Thread(target=_bg_loop, args=(state, refresh), daemon=True)
     bg.start()
 
-    try:
-        # Stabilization for Windows terminals: 
-        # - disable Alt Screen to stop 'automatic erasing' flicker
-        # - use a very steady refresh cycle
-        is_windows = (os.name == 'nt')
-        
-        # Initial render to clear the old screen state
-        if is_windows:
-            console.clear()
+    # Platform-specific rendering modes:
+    #   Windows: screen=False avoids Alt-Screen buffer that causes flash/erase
+    #   macOS  : screen=True  gives a clean full-screen TUI (works well in Terminal.app)
+    #   Linux  : screen=True  standard Rich behaviour
+    is_windows = (os.name == "nt")
+    is_macos   = (sys.platform == "darwin")
+    use_screen = not is_windows  # True on macOS + Linux
 
-        with Live(_render(state), refresh_per_second=10, screen=not is_windows, console=console, auto_refresh=False) as live:
+    try:
+        if is_windows:
+            console.clear()  # One-shot clear to start fresh without Alt-Screen flicker
+
+        with Live(
+            _render(state),
+            refresh_per_second=10,
+            screen=use_screen,
+            console=console,
+            auto_refresh=False,
+        ) as live:
             last_version = -1
             while True:
                 with state.lock:
                     current_version = state.version
-                
-                # Update only when new data is ready
+
+                # Redraw ONLY when a full new data batch is available
                 if current_version != last_version:
                     live.update(_render(state), refresh=True)
                     last_version = current_version
-                
-                # Steady heartbeat sleep
-                time.sleep(0.1)
+
+                time.sleep(0.1)  # 100 ms polling — low CPU, responsive
+
     except KeyboardInterrupt:
         pass
     finally:
         state.running = False
         console.print("\n[dim cyan]SysDock closed.[/dim cyan]\n")
+
