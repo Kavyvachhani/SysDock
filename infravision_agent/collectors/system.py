@@ -111,7 +111,9 @@ def get_cpu(interval=1.0):
             result["usage_per_core"] = _psutil.cpu_percent(interval=None, percpu=True)
         except Exception:
             pass
-        freq = _safe(_psutil.cpu_freq)
+        freq = None
+        if hasattr(_psutil, "cpu_freq"):
+            freq = _safe(_psutil.cpu_freq)
         if freq:
             result["freq_mhz"]     = round(freq.current, 1)
             result["freq_max_mhz"] = round(freq.max, 1) if freq.max else None
@@ -405,7 +407,10 @@ def get_temperatures():
     if _IS_WINDOWS:
         return []  # psutil sensors_temperatures() not reliably available on Windows
     try:
-        temps = _psutil.sensors_temperatures()
+        fn = getattr(_psutil, "sensors_temperatures", None)
+        if not fn:
+            return []
+        temps = fn()
         if not temps:
             return []
         result = []
