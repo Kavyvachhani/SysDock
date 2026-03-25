@@ -82,7 +82,7 @@ jobs:
         with:
           skip-existing: true
 
-  # ── Build Native Executables (.deb, .pkg, .exe) ─────────────────────────────
+  # ── Build Native Executables (Linux Only) ─────────────────────────────
   build_exe:
     name: Build Native Installers
     needs: test
@@ -94,14 +94,6 @@ jobs:
             name: sysdock
             dist_file: sysdock_linux.deb
             out_dir: SysDock_Linux
-          - os: macos-latest
-            name: sysdock
-            dist_file: SysDock_macOS.pkg
-            out_dir: SysDock_Mac
-          - os: windows-latest
-            name: SysDock_Windows
-            dist_file: SysDock_Windows.exe
-            out_dir: SysDock_Windows
 
     steps:
       - uses: actions/checkout@v4
@@ -129,7 +121,7 @@ jobs:
           mkdir -p build_deb/DEBIAN
           cat <<EOF > build_deb/DEBIAN/control
           Package: sysdock
-          Version: 1.4.4
+          Version: 1.4.5
           Section: base
           Priority: optional
           Architecture: amd64
@@ -139,25 +131,6 @@ jobs:
           mkdir -p dist/${{ matrix.out_dir }}
           dpkg-deb --build build_deb dist/${{ matrix.out_dir }}/${{ matrix.dist_file }}
           echo "Run 'sudo dpkg -i ${{ matrix.dist_file }}' to install natively on Linux." > dist/${{ matrix.out_dir }}/README.txt
-
-      # ----- macOS: Create .pkg installer -----
-      - name: Build macOS .pkg Installer
-        if: matrix.os == 'macos-latest'
-        run: |
-          mkdir -p build_pkg/usr/local/bin
-          cp dist/${{ matrix.name }} build_pkg/usr/local/bin/sysdock
-          chmod +x build_pkg/usr/local/bin/sysdock
-          mkdir -p dist/${{ matrix.out_dir }}
-          pkgbuild --root build_pkg --identifier com.infravision.sysdock --version 1.4.4 dist/${{ matrix.out_dir }}/${{ matrix.dist_file }}
-          echo "Double-click the .pkg file to install SysDock globally on your Mac." > dist/${{ matrix.out_dir }}/README_MAC.txt
-
-      # ----- Windows: Move to folder -----
-      - name: Build Windows Folder
-        if: matrix.os == 'windows-latest'
-        run: |
-          mkdir -p dist/${{ matrix.out_dir }}
-          cp dist/${{ matrix.dist_file }} dist/${{ matrix.out_dir }}/
-          echo "Run the .exe file directly on Windows." > dist/${{ matrix.out_dir }}/README_WINDOWS.txt
 
       # ----- Upload Native Artifacts -----
       - name: Upload Installer Artifact
