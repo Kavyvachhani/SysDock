@@ -81,3 +81,40 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
+
+  # ── Build Native Executables (macOS / Windows) ──────────────────────────────
+  build_exe:
+    name: Build Executables
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            name: SysDock_macOS
+            ext: ""
+          - os: windows-latest
+            name: SysDock_Windows
+            ext: ".exe"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install psutil rich click pyinstaller
+          pip install -e .
+
+      - name: Build with PyInstaller
+        run: pyinstaller --clean -F --name ${{ matrix.name }} --paths . infravision_agent/__main__.py
+
+      - name: Upload Executable Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: dist/${{ matrix.name }}${{ matrix.ext }}
+
