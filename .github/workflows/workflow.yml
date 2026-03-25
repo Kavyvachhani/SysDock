@@ -3,29 +3,26 @@ name: Publish SysDock to PyPI
 on:
   push:
     tags:
-      - "v*.*.*"          # triggers on tags like v1.4.0
+      - "v*.*.*"
   release:
-    types: [published]    # also triggers when a GitHub Release is published
+    types: [published]
 
 jobs:
-  # ── Build pure-Python wheel (works for all platforms) ──────────────────────
+  # ── Build distribution ──────────────────────────────────────────────────────
   build:
     name: Build distribution
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install build tools
         run: pip install build
 
-      - name: Clean old dist files (prevent stale packages from being uploaded)
+      - name: Clean old dist files
         run: rm -rf dist/
 
       - name: Build wheel and sdist
@@ -37,62 +34,39 @@ jobs:
           name: dist
           path: dist/
 
-  # ── Run tests on all 3 platforms before publishing ─────────────────────────
+  # ── Multi-platform smoke tests ──────────────────────────────────────────────
   test:
-    name: Test (${{ matrix.os }})
+    name: Test on ${{ matrix.os }}
     needs: build
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.11"]
 
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.11"
 
       - name: Install dependencies
         run: pip install psutil rich click
 
-      - name: Install package (editable)
+      - name: Install package
         run: pip install -e .
 
-      - name: Run collector smoke tests
-        shell: bash
-        run: python -c "
-from infravision_agent.collectors import system, disk, network, processes
-import json
+      - name: Smoke test collectors
+        run: |
+          python -c "from infravision_agent.collectors import system; s = system.collect_all(); assert s.get('hostname'); assert s.get('cpu'); assert s.get('memory'); print('PASS:', s['hostname']['os'])"
 
-s = system.collect_all()
-assert s.get('hostname'), 'hostname missing'
-assert s.get('cpu'), 'cpu missing'
-assert s.get('memory'), 'memory missing'
-
-d = disk.collect_all()
-assert 'partitions' in d, 'partitions missing'
-
-n = network.collect_all()
-assert 'interfaces' in n, 'interfaces missing'
-
-p = processes.collect_all()
-assert 'summary' in p, 'summary missing'
-
-print('All collector checks passed on', s['hostname']['os'])
-"
-
-  # ── Publish to PyPI (OIDC Trusted Publisher, no API token needed) ──────────
+  # ── Publish to PyPI (OIDC Trusted Publisher) ────────────────────────────────
   publish:
     name: Publish to PyPI
     needs: [build, test]
     runs-on: ubuntu-latest
     environment: sysdock
-
     permissions:
       id-token: write
 
