@@ -121,15 +121,15 @@ jobs:
       - name: Build with PyInstaller
         run: |
           if [ "${{ matrix.os }}" = "macos-latest" ]; then
-            pyinstaller --clean platforms/mac/sysdock_mac.spec
+            pyinstaller --noconfirm --clean platforms/mac/sysdock_mac.spec
           elif [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
-            pyinstaller --clean -F --name ${{ matrix.name }} --paths . sysdock/__main__.py
+            pyinstaller --noconfirm --clean -F --name ${{ matrix.name }} --paths . sysdock/__main__.py
           else
             # Windows
             if [ -f "platforms/windows/SysDock.ico" ]; then
-              pyinstaller --clean --name ${{ matrix.name }} --paths . --icon "platforms/windows/SysDock.ico" sysdock/__main__.py
+              pyinstaller --noconfirm --clean --name ${{ matrix.name }} --paths . --icon "platforms/windows/SysDock.ico" sysdock/__main__.py
             else
-              pyinstaller --clean --name ${{ matrix.name }} --paths . sysdock/__main__.py
+              pyinstaller --noconfirm --clean --name ${{ matrix.name }} --paths . sysdock/__main__.py
             fi
           fi
 

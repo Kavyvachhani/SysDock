@@ -11,7 +11,7 @@ setup(
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     author="Kavy Vachhani",
-    author_email="kavy@vachhani.com",
+    author_email="kavyvachhani@gmail.com",
     url="https://github.com/Kavyvachhani/SysDock",
     project_urls={
         "Homepage": "https://github.com/Kavyvachhani/SysDock",
