@@ -59,7 +59,7 @@ jobs:
 
       - name: Smoke test collectors
         run: |
-          python -c "from infravision_agent.collectors import system; s = system.collect_all(); assert s.get('hostname'); assert s.get('cpu'); assert s.get('memory'); print('PASS:', s['hostname']['os'])"
+          python -c "from sysdock.collectors import system; s = system.collect_all(); assert s.get('hostname'); assert s.get('cpu'); assert s.get('memory'); print('PASS:', s['hostname']['os'])"
 
   # ── Publish to PyPI (OIDC Trusted Publisher) ────────────────────────────────
   publish:
@@ -121,15 +121,15 @@ jobs:
       - name: Build with PyInstaller
         run: |
           if [ "${{ matrix.os }}" = "macos-latest" ]; then
-            pyinstaller --clean SysDock_mac.spec
+            pyinstaller --clean platforms/mac/sysdock_mac.spec
           elif [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
-            pyinstaller --clean -F --name ${{ matrix.name }} --paths . infravision_agent/__main__.py
+            pyinstaller --clean -F --name ${{ matrix.name }} --paths . sysdock/__main__.py
           else
             # Windows
-            if [ -f "sysdock_logo.ico" ]; then
-              pyinstaller --clean --name ${{ matrix.name }} --paths . --icon "sysdock_logo.ico" infravision_agent/__main__.py
+            if [ -f "platforms/windows/SysDock.ico" ]; then
+              pyinstaller --clean --name ${{ matrix.name }} --paths . --icon "platforms/windows/SysDock.ico" sysdock/__main__.py
             else
-              pyinstaller --clean --name ${{ matrix.name }} --paths . infravision_agent/__main__.py
+              pyinstaller --clean --name ${{ matrix.name }} --paths . sysdock/__main__.py
             fi
           fi
 
