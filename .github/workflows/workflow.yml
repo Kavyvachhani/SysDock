@@ -183,73 +183,27 @@ jobs:
           dpkg-deb --build build_deb dist/${{ matrix.out_dir }}/${{ matrix.dist_file }}
           echo "Run 'sudo dpkg -i ${{ matrix.dist_file }}' to install natively on Linux." > dist/${{ matrix.out_dir }}/README.txt
 
-      # ----- macOS: Create .pkg Installer for the .app -----
+      # ----- macOS: Package the .app bundle directly into .pkg -----
       - name: Build macOS .pkg
         if: matrix.os == 'macos-latest'
         run: |
-          mkdir -p pkg_root/usr/local/bin
-          cp dist/${{ matrix.name }} pkg_root/usr/local/bin/sysdock
-          chmod 755 pkg_root/usr/local/bin/sysdock
-          
-          # Create Applications wrapper
-          APP_DIR="pkg_root/Applications/SysDock.app"
-          mkdir -p "$APP_DIR/Contents/MacOS"
-          mkdir -p "$APP_DIR/Contents/Resources"
-          
-          cat <<EOF > "$APP_DIR/Contents/Info.plist"
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>CFBundleExecutable</key>
-              <string>SysDock</string>
-              <key>CFBundleIdentifier</key>
-              <string>io.sysdock.app</string>
-              <key>CFBundleName</key>
-              <string>SysDock</string>
-              <key>CFBundlePackageType</key>
-              <string>APPL</string>
-              <key>CFBundleShortVersionString</key>
-              <string>1.4.6</string>
-              <key>LSMinimumSystemVersion</key>
-              <string>10.13</string>
-          </dict>
-          </plist>
-          EOF
-          sed -i '' 's/^ \{10\}//' "$APP_DIR/Contents/Info.plist"
-          
-          if [ -f SysDock.icns ]; then
-            cp SysDock.icns "$APP_DIR/Contents/Resources/SysDock.icns"
-            plutil -insert CFBundleIconFile -string "SysDock.icns" "$APP_DIR/Contents/Info.plist"
-          elif [ -f sysdock_logo.ico ]; then
-            sips -s format icns sysdock_logo.ico --out "$APP_DIR/Contents/Resources/SysDock.icns"
-            plutil -insert CFBundleIconFile -string "SysDock.icns" "$APP_DIR/Contents/Info.plist"
-          fi
-          
-          cat <<'EOF' > "$APP_DIR/Contents/MacOS/SysDock"
-          #!/bin/bash
-          # Dedicated Mac Launcher for SysDock
-          clear
-          echo "🚀 Launching SysDock Dashboard..."
-          osascript -e 'tell application "Terminal"
-              activate
-              set newWin to do script "/usr/local/bin/sysdock dash"
-              set custom title of newWin to "SysDock — Monitoring"
-          end tell'
-          EOF
-          sed -i '' 's/^ \{10\}//' "$APP_DIR/Contents/MacOS/SysDock"
-          chmod +x "$APP_DIR/Contents/MacOS/SysDock"
-          
+          # The spec produces dist/SysDock.app — package it directly
           mkdir -p dist/${{ matrix.out_dir }}
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
+
+          # Copy icon from platforms/mac if it exists
+          if [ -f "platforms/mac/SysDock.icns" ]; then
+            cp "platforms/mac/SysDock.icns" "dist/SysDock.app/Contents/Resources/SysDock.icns" 2>/dev/null || true
+          fi
+
           pkgbuild \
-            --root pkg_root \
-            --identifier io.sysdock.agent \
-            --version "${VERSION:-1.0.0}" \
-            --install-location / \
-            --ownership preserve \
+            --component dist/SysDock.app \
+            --identifier io.sysdock.app \
+            --version "${VERSION:-1.4.6}" \
+            --install-location /Applications \
             dist/${{ matrix.out_dir }}/SysDock_macOS.pkg
+
           echo "Double-click SysDock_macOS.pkg to install SysDock." > dist/${{ matrix.out_dir }}/README.txt
 
       # ----- Windows: Zip the folder into output dir -----
