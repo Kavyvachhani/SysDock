@@ -213,12 +213,15 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist\SysDock_Windows
           New-Item -ItemType Directory -Force -Path dist\${{ matrix.out_dir }}
-          $exe = "dist\sysdock.exe"
-          if (Test-Path $exe) {
-            Copy-Item $exe dist\SysDock_Windows\sysdock.exe -Force
+          # PyInstaller -F produces dist\sysdock.exe (single file)
+          # PyInstaller without -F produces dist\sysdock\sysdock.exe (folder)
+          if (Test-Path "dist\sysdock.exe") {
+            Copy-Item "dist\sysdock.exe" "dist\SysDock_Windows\sysdock.exe" -Force
+          } elseif (Test-Path "dist\sysdock\sysdock.exe") {
+            Copy-Item "dist\sysdock\sysdock.exe" "dist\SysDock_Windows\sysdock.exe" -Force
           } else {
-            # Only look in the top-level dist folder (not recursive) to avoid self-copy
-            Get-ChildItem -Path dist -Depth 1 -Include "*.exe" | Copy-Item -Destination dist\SysDock_Windows\ -Force
+            Write-Error "Could not find sysdock.exe in dist\ or dist\sysdock\"
+            exit 1
           }
           Compress-Archive -Path "dist\SysDock_Windows" -DestinationPath "dist\${{ matrix.out_dir }}\${{ matrix.dist_file }}" -Force
           Set-Content dist\${{ matrix.out_dir }}\README.txt "Extract the zip and run sysdock.exe inside the folder to start SysDock on Windows."

@@ -1,7 +1,7 @@
 <h1 align="center">SysDock 🚀</h1>
 <p align="center"><b>Built and independently maintained by Kavy Vachhani</b></p>
 <p align="center">
-  <b>Modern Linux monitoring agent with a live terminal dashboard, accurate Docker metrics, and a pip-installable CLI.</b>
+  <b>Modern cross-platform monitoring agent — Linux, macOS, and Windows — with a live terminal dashboard, Docker metrics, and pip-installable CLI.</b>
 </p>
 
 <p align="center">
@@ -14,9 +14,9 @@
 
 ## ⚡ What is SysDock?
 
-SysDock is a lightweight, zero-configuration monitoring tool for **any Linux server**. It runs completely in the terminal and provides real-time, zero-clutter insights into your system's performance, Docker containers, and live firewall rules.
+SysDock is a lightweight, zero-configuration monitoring tool for **Linux, macOS, and Windows**. It runs completely in the terminal and provides real-time insights into your system's performance, Docker containers, and live firewall rules.
 
-Think of it as `htop` + `docker stats` + `ufw status` rolled into one beautiful dashboard!
+Think of it as `htop` + `docker stats` + `ufw status` rolled into one beautiful dashboard, running natively on any platform!
 
 ```bash
 pipx install sysdock
@@ -61,11 +61,29 @@ Download the latest pre-built native installer directly from [GitHub Releases](h
 
 | Platform | Installer | How to Install |
 |----------|-----------|----------------|
-| 🍎 **macOS** | `SysDock_macOS.pkg` | Double-click the `.pkg` — installs `SysDock.app` to `/Applications` |
+| 🍎 **macOS** | `SysDock_macOS.pkg` | Double-click the `.pkg` — installs `SysDock.app` into `/Applications` |
 | 🐧 **Linux** | `sysdock_linux.deb` | `sudo dpkg -i sysdock_linux.deb` |
-| 🪟 **Windows** | `SysDock_Windows.zip` | Extract the zip and run `sysdock.exe` |
+| 🪟 **Windows** | `SysDock_Windows.zip` | Extract the zip, run `sysdock.exe` |
 
-> These native installers are automatically built and published to [GitHub Releases](https://github.com/Kavyvachhani/SysDock/releases) whenever a new version tag is pushed.
+### 🍎 macOS Step-by-Step
+1. Download `SysDock_macOS.pkg` from [Releases](https://github.com/Kavyvachhani/SysDock/releases/latest)
+2. Double-click it to run the macOS Installer
+3. SysDock.app is installed into your `/Applications` folder
+4. Open it from Launchpad or Spotlight — it launches its own window!
+
+### 🪟 Windows Step-by-Step
+1. Download `SysDock_Windows.zip` from [Releases](https://github.com/Kavyvachhani/SysDock/releases/latest)
+2. Extract the zip file
+3. Double-click `sysdock.exe` inside the extracted folder — no installation required!
+
+### 🐧 Linux (Debian/Ubuntu)
+```bash
+wget https://github.com/Kavyvachhani/SysDock/releases/latest/download/sysdock_linux.deb
+sudo dpkg -i sysdock_linux.deb
+sysdock
+```
+
+> Native installers are automatically built and published to [GitHub Releases](https://github.com/Kavyvachhani/SysDock/releases) on every version tag.
 
 ---
 
