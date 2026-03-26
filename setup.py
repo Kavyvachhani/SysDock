@@ -7,7 +7,7 @@ from setuptools import setup, find_packages
 setup(
     name="sysdock",
     version="1.4.6",
-    description="SysDock — Modern Linux monitoring agent with live terminal dashboard and Docker metrics",
+    description="SysDock — Modern cross-platform monitoring agent (Linux, macOS, Windows) with live terminal dashboard and Docker metrics",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     author="Kavy Vachhani",
@@ -38,6 +38,10 @@ setup(
     classifiers=[
         "Programming Language :: Python :: 3",
         "Operating System :: POSIX :: Linux",
+        "Operating System :: MacOS",
+        "Operating System :: Microsoft :: Windows",
+        "Environment :: Console",
         "Topic :: System :: Monitoring",
+        "Topic :: System :: Systems Administration",
     ],
 )

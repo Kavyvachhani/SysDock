@@ -55,6 +55,20 @@ pipx upgrade sysdock
 
 ---
 
+## 💻 Native App Installers (macOS, Windows, Linux)
+
+Download the latest pre-built native installer directly from [GitHub Releases](https://github.com/Kavyvachhani/SysDock/releases/latest):
+
+| Platform | Installer | How to Install |
+|----------|-----------|----------------|
+| 🍎 **macOS** | `SysDock_macOS.pkg` | Double-click the `.pkg` — installs `SysDock.app` to `/Applications` |
+| 🐧 **Linux** | `sysdock_linux.deb` | `sudo dpkg -i sysdock_linux.deb` |
+| 🪟 **Windows** | `SysDock_Windows.zip` | Extract the zip and run `sysdock.exe` |
+
+> These native installers are automatically built and published to [GitHub Releases](https://github.com/Kavyvachhani/SysDock/releases) whenever a new version tag is pushed.
+
+---
+
 ## 🚀 Quick Reference
 
 ```bash

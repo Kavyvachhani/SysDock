@@ -206,15 +206,22 @@ jobs:
 
           echo "Double-click SysDock_macOS.pkg to install SysDock." > dist/${{ matrix.out_dir }}/README.txt
 
-      # ----- Windows: Zip the folder into output dir -----
+      # ----- Windows: Copy .exe into output dir and zip -----
       - name: Collect Windows folder
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path dist/${{ matrix.out_dir }}
-          Rename-Item "dist/${{ matrix.name }}" "dist/SysDock_Windows"
-          Compress-Archive -Path "dist/SysDock_Windows" -DestinationPath "dist/${{ matrix.out_dir }}/${{ matrix.dist_file }}"
-          Set-Content dist/${{ matrix.out_dir }}/README.txt "Extract the zip and run sysdock.exe inside the folder to start SysDock on Windows."
+          New-Item -ItemType Directory -Force -Path dist\${{ matrix.out_dir }}
+          $exe = "dist\sysdock.exe"
+          if (Test-Path $exe) {
+            New-Item -ItemType Directory -Force -Path dist\SysDock_Windows
+            Copy-Item $exe dist\SysDock_Windows\sysdock.exe
+          } else {
+            New-Item -ItemType Directory -Force -Path dist\SysDock_Windows
+            Get-ChildItem dist -Recurse -Include "*.exe" | Copy-Item -Destination dist\SysDock_Windows\
+          }
+          Compress-Archive -Path "dist\SysDock_Windows" -DestinationPath "dist\${{ matrix.out_dir }}\${{ matrix.dist_file }}" -Force
+          Set-Content dist\${{ matrix.out_dir }}\README.txt "Extract the zip and run sysdock.exe inside the folder to start SysDock on Windows."
 
       # ----- Upload artifact for next job to download -----
       - name: Upload Installer Artifact
