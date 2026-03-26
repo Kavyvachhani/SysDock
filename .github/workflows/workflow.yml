@@ -151,30 +151,32 @@ jobs:
             ICON="utilities-system-monitor"
           fi
           cat <<EOF > build_deb/usr/share/applications/sysdock.desktop
-[Desktop Entry]
-Version=1.0
-Name=SysDock
-Comment=SysDock Monitoring Dashboard
-Exec=x-terminal-emulator -e /usr/local/bin/sysdock dash
-Icon=${ICON}
-Terminal=false
-Type=Application
-Categories=System;Monitor;
-EOF
+          [Desktop Entry]
+          Version=1.0
+          Name=SysDock
+          Comment=SysDock Monitoring Dashboard
+          Exec=x-terminal-emulator -e /usr/local/bin/sysdock dash
+          Icon=${ICON}
+          Terminal=false
+          Type=Application
+          Categories=System;Monitor;
+          EOF
+          sed -i 's/^ \{10\}//' build_deb/usr/share/applications/sysdock.desktop
           chmod 644 build_deb/usr/share/applications/sysdock.desktop
           
           mkdir -p build_deb/DEBIAN
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
           cat <<EOF > build_deb/DEBIAN/control
-Package: sysdock
-Version: ${VERSION}
-Section: base
-Priority: optional
-Architecture: amd64
-Maintainer: SysDock <info@sysdock.io>
-Description: SysDock monitoring agent and live dashboard
-EOF
+          Package: sysdock
+          Version: ${VERSION}
+          Section: base
+          Priority: optional
+          Architecture: amd64
+          Maintainer: Kavy Vachhani <kavy@vachhani.com>
+          Description: SysDock monitoring agent and live dashboard
+          EOF
+          sed -i 's/^ \{10\}//' build_deb/DEBIAN/control
           mkdir -p dist/${{ matrix.out_dir }}
           dpkg-deb --build build_deb dist/${{ matrix.out_dir }}/${{ matrix.dist_file }}
           echo "Run 'sudo dpkg -i ${{ matrix.dist_file }}' to install natively on Linux." > dist/${{ matrix.out_dir }}/README.txt
@@ -193,25 +195,26 @@ EOF
           mkdir -p "$APP_DIR/Contents/Resources"
           
           cat <<EOF > "$APP_DIR/Contents/Info.plist"
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleExecutable</key>
-    <string>SysDock</string>
-    <key>CFBundleIdentifier</key>
-    <string>io.sysdock.app</string>
-    <key>CFBundleName</key>
-    <string>SysDock</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.4.5</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>10.13</string>
-</dict>
-</plist>
-EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>SysDock</string>
+              <key>CFBundleIdentifier</key>
+              <string>io.sysdock.app</string>
+              <key>CFBundleName</key>
+              <string>SysDock</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleShortVersionString</key>
+              <string>1.4.6</string>
+              <key>LSMinimumSystemVersion</key>
+              <string>10.13</string>
+          </dict>
+          </plist>
+          EOF
+          sed -i '' 's/^ \{10\}//' "$APP_DIR/Contents/Info.plist"
           
           if [ -f SysDock.icns ]; then
             cp SysDock.icns "$APP_DIR/Contents/Resources/SysDock.icns"
@@ -232,6 +235,7 @@ EOF
               set custom title of newWin to "SysDock — Monitoring"
           end tell'
           EOF
+          sed -i '' 's/^ \{10\}//' "$APP_DIR/Contents/MacOS/SysDock"
           chmod +x "$APP_DIR/Contents/MacOS/SysDock"
           
           mkdir -p dist/${{ matrix.out_dir }}
