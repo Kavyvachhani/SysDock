@@ -1,5 +1,5 @@
 <h1 align="center">SysDock 🚀</h1>
-
+<p align="center"><b>Built and independently maintained by Kavy Vachhani</b></p>
 <p align="center">
   <b>Modern Linux monitoring agent with a live terminal dashboard, accurate Docker metrics, and a pip-installable CLI.</b>
 </p>
@@ -122,4 +122,4 @@ SysDock takes immense pride in providing data that you can actually trust:
 - **Source Code:** [github.com/Kavyvachhani/SysDock](https://github.com/Kavyvachhani/SysDock)
 - **Issue Tracker:** [github.com/Kavyvachhani/SysDock/issues](https://github.com/Kavyvachhani/SysDock/issues)
 
-MIT License © 2026 [Kavyvachhani](https://github.com/Kavyvachhani)
+MIT License © 2026 built by **Kavy Vachhani**

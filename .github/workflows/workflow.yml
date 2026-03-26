@@ -82,7 +82,7 @@ jobs:
         with:
           skip-existing: true
 
-  # ── Build Native Executables (Linux Only) ─────────────────────────────
+  # ── Build Native Executables (Linux, macOS, Windows) ───────────────────────
   build_exe:
     name: Build Native Installers
     needs: test
@@ -93,7 +93,17 @@ jobs:
           - os: ubuntu-latest
             name: sysdock
             dist_file: sysdock_linux.deb
-            out_dir: SysDock_Linux
+            out_dir: ubuntu
+
+          - os: macos-latest
+            name: sysdock
+            dist_file: SysDock_macOS.pkg
+            out_dir: mac
+
+          - os: windows-latest
+            name: sysdock
+            dist_file: SysDock_Windows.zip
+            out_dir: windows
 
     steps:
       - uses: actions/checkout@v4
@@ -109,7 +119,19 @@ jobs:
           pip install -e .
 
       - name: Build with PyInstaller
-        run: pyinstaller --clean -F --name ${{ matrix.name }} --paths . infravision_agent/__main__.py
+        run: |
+          if [ "${{ matrix.os }}" = "macos-latest" ]; then
+            pyinstaller --clean SysDock_mac.spec
+          elif [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+            pyinstaller --clean -F --name ${{ matrix.name }} --paths . infravision_agent/__main__.py
+          else
+            # Windows
+            if [ -f "sysdock_logo.ico" ]; then
+              pyinstaller --clean --name ${{ matrix.name }} --paths . --icon "sysdock_logo.ico" infravision_agent/__main__.py
+            else
+              pyinstaller --clean --name ${{ matrix.name }} --paths . infravision_agent/__main__.py
+            fi
+          fi
 
       # ----- Linux: Create .deb (dpkg) -----
       - name: Build Linux .deb package
@@ -118,25 +140,220 @@ jobs:
           mkdir -p build_deb/usr/local/bin
           cp dist/${{ matrix.name }} build_deb/usr/local/bin/sysdock
           chmod +x build_deb/usr/local/bin/sysdock
+          
+          # Add .desktop file
+          mkdir -p build_deb/usr/share/applications
+          mkdir -p build_deb/usr/share/pixmaps
+          if [ -f "cloud.png" ]; then
+            cp cloud.png build_deb/usr/share/pixmaps/sysdock.png
+            ICON="sysdock"
+          else
+            ICON="utilities-system-monitor"
+          fi
+          cat <<EOF > build_deb/usr/share/applications/sysdock.desktop
+[Desktop Entry]
+Version=1.0
+Name=SysDock
+Comment=SysDock Monitoring Dashboard
+Exec=x-terminal-emulator -e /usr/local/bin/sysdock dash
+Icon=${ICON}
+Terminal=false
+Type=Application
+Categories=System;Monitor;
+EOF
+          chmod 644 build_deb/usr/share/applications/sysdock.desktop
+          
           mkdir -p build_deb/DEBIAN
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
           cat <<EOF > build_deb/DEBIAN/control
-          Package: sysdock
-          Version: 1.4.5
-          Section: base
-          Priority: optional
-          Architecture: amd64
-          Maintainer: SysDock <info@sysdock.io>
-          Description: SysDock monitoring agent and live dashboard
-          EOF
+Package: sysdock
+Version: ${VERSION}
+Section: base
+Priority: optional
+Architecture: amd64
+Maintainer: SysDock <info@sysdock.io>
+Description: SysDock monitoring agent and live dashboard
+EOF
           mkdir -p dist/${{ matrix.out_dir }}
           dpkg-deb --build build_deb dist/${{ matrix.out_dir }}/${{ matrix.dist_file }}
           echo "Run 'sudo dpkg -i ${{ matrix.dist_file }}' to install natively on Linux." > dist/${{ matrix.out_dir }}/README.txt
 
-      # ----- Upload Native Artifacts -----
+      # ----- macOS: Create .pkg Installer for the .app -----
+      - name: Build macOS .pkg
+        if: matrix.os == 'macos-latest'
+        run: |
+          mkdir -p pkg_root/usr/local/bin
+          cp dist/${{ matrix.name }} pkg_root/usr/local/bin/sysdock
+          chmod 755 pkg_root/usr/local/bin/sysdock
+          
+          # Create Applications wrapper
+          APP_DIR="pkg_root/Applications/SysDock.app"
+          mkdir -p "$APP_DIR/Contents/MacOS"
+          mkdir -p "$APP_DIR/Contents/Resources"
+          
+          cat <<EOF > "$APP_DIR/Contents/Info.plist"
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>SysDock</string>
+    <key>CFBundleIdentifier</key>
+    <string>io.sysdock.app</string>
+    <key>CFBundleName</key>
+    <string>SysDock</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.4.5</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>10.13</string>
+</dict>
+</plist>
+EOF
+          
+          if [ -f SysDock.icns ]; then
+            cp SysDock.icns "$APP_DIR/Contents/Resources/SysDock.icns"
+            plutil -insert CFBundleIconFile -string "SysDock.icns" "$APP_DIR/Contents/Info.plist"
+          elif [ -f sysdock_logo.ico ]; then
+            sips -s format icns sysdock_logo.ico --out "$APP_DIR/Contents/Resources/SysDock.icns"
+            plutil -insert CFBundleIconFile -string "SysDock.icns" "$APP_DIR/Contents/Info.plist"
+          fi
+          
+          cat <<'EOF' > "$APP_DIR/Contents/MacOS/SysDock"
+          #!/bin/bash
+          # Dedicated Mac Launcher for SysDock
+          clear
+          echo "🚀 Launching SysDock Dashboard..."
+          osascript -e 'tell application "Terminal"
+              activate
+              set newWin to do script "/usr/local/bin/sysdock dash"
+              set custom title of newWin to "SysDock — Monitoring"
+          end tell'
+          EOF
+          chmod +x "$APP_DIR/Contents/MacOS/SysDock"
+          
+          mkdir -p dist/${{ matrix.out_dir }}
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          pkgbuild \
+            --root pkg_root \
+            --identifier io.sysdock.agent \
+            --version "${VERSION:-1.0.0}" \
+            --install-location / \
+            --ownership preserve \
+            dist/${{ matrix.out_dir }}/SysDock_macOS.pkg
+          echo "Double-click SysDock_macOS.pkg to install SysDock." > dist/${{ matrix.out_dir }}/README.txt
+
+      # ----- Windows: Zip the folder into output dir -----
+      - name: Collect Windows folder
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/${{ matrix.out_dir }}
+          Rename-Item "dist/${{ matrix.name }}" "dist/SysDock_Windows"
+          Compress-Archive -Path "dist/SysDock_Windows" -DestinationPath "dist/${{ matrix.out_dir }}/${{ matrix.dist_file }}"
+          Set-Content dist/${{ matrix.out_dir }}/README.txt "Extract the zip and run sysdock.exe inside the folder to start SysDock on Windows."
+
+      # ----- Upload artifact for next job to download -----
       - name: Upload Installer Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.out_dir }}
           path: dist/${{ matrix.out_dir }}/
 
+  # ── Publish to GitHub Releases (versioned tag + rolling 'latest') ──────────
+  release_latest:
+    name: Publish GitHub Release
+    needs: build_exe
+    runs-on: ubuntu-latest
+    # Only runs on tag pushes (not bare 'release: published' events that lack a tag)
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write   # needed to create/update releases and tags
 
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so we can move tags
+
+      # Download all three installer artifacts
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ubuntu
+          path: release_assets/
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mac
+          path: release_assets/
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows
+          path: release_assets/
+
+      - name: List release assets
+        run: ls -lh release_assets/
+
+      # ── Create / update the versioned release ──────────────────────────────
+      - name: Create versioned GitHub Release and upload assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Create the release (skip if it already exists from 'release: published')
+          gh release create "${TAG}" \
+            --title "SysDock ${TAG}" \
+            --notes "## SysDock ${TAG}
+
+          ### Native installers
+          | Platform | File |
+          |----------|------|
+          | 🍎 macOS | \`SysDock_macOS.pkg\` |
+          | 🐧 Linux | \`sysdock_linux.deb\` |
+          | 🪟 Windows | \`SysDock_Windows.zip\` |
+
+          Install with:
+          - **macOS**: double-click \`SysDock_macOS.pkg\`
+          - **Linux**: \`sudo dpkg -i sysdock_linux.deb\`
+          - **Windows**: extract \`SysDock_Windows.zip\` and run \`sysdock.exe\`
+          - **pip** (all platforms): \`pip install sysdock\`" \
+            release_assets/sysdock_linux.deb \
+            release_assets/SysDock_macOS.pkg \
+            release_assets/SysDock_Windows.zip \
+            || true   # tolerate 'already exists' gracefully
+
+      # ── Move the rolling 'latest' tag and release ──────────────────────────
+      - name: Update rolling 'latest' release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Delete old 'latest' release + tag (ignore errors if they don't exist yet)
+          gh release delete latest --yes 2>/dev/null || true
+          git push origin :refs/tags/latest 2>/dev/null || true
+
+          # Re-create 'latest' pointing at the new commit
+          git tag -f latest
+          git push origin latest --force
+
+          gh release create latest \
+            --title "SysDock latest (${TAG})" \
+            --notes "This is the **rolling latest release**, always tracking the newest tag.
+          Current tag: \`${TAG}\`
+
+          ### Native installers
+          | Platform | File |
+          |----------|------|
+          | 🍎 macOS | \`SysDock_macOS.pkg\` |
+          | 🐧 Linux | \`sysdock_linux.deb\` |
+          | 🪟 Windows | \`SysDock_Windows.zip\` |" \
+            --prerelease \
+            release_assets/sysdock_linux.deb \
+            release_assets/SysDock_macOS.pkg \
+            release_assets/SysDock_Windows.zip

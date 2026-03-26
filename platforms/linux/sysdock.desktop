@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Name=SysDock
+Comment=SysDock Monitoring Agent
+Exec=/opt/sysdock/SysDock
+Terminal=false
+Type=Application
+Icon=/opt/sysdock/SysDock.png
+Categories=System;Monitor;

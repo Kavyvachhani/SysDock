@@ -4,7 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sysdock"
-version = "1.4.5"
+version = "1.4.6"
+authors = [
+  { name = "Kavy Vachhani", email = "kavy@vachhani.com" }
+]
 description = "SysDock — Modern cross-platform monitoring agent (Linux, macOS, Windows) with live terminal dashboard, GPU metrics and Docker support"
 readme = "README.md"
 license = { text = "MIT" }
@@ -36,7 +39,7 @@ server = ["flask>=2.0"]
 all    = ["docker>=5.0.0", "flask>=2.0"]
 
 [project.scripts]
-sysdock = "infravision_agent.cli:main"
+sysdock = "sysdock.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Kavyvachhani/SysDock"
@@ -44,4 +47,4 @@ Issues   = "https://github.com/Kavyvachhani/SysDock/issues"
 
 [tool.setuptools.packages.find]
 where   = ["."]
-include = ["infravision_agent*"]
+include = ["sysdock*"]

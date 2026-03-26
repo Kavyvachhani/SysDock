@@ -29,7 +29,7 @@ from rich import box
 console = Console()
 
 TOOL_NAME = "SysDock"
-VERSION   = "1.4.5"
+VERSION   = "1.4.6"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,7 +51,7 @@ def cli(ctx):
     """
     # If no subcommand given, auto-launch the dashboard (like htop)
     if ctx.invoked_subcommand is None:
-        from infravision_agent.display.dashboard import run_dashboard
+        from sysdock.display.dashboard import run_dashboard
         run_dashboard()
 
 
@@ -62,7 +62,7 @@ def cli(ctx):
               help="Refresh interval in seconds (min 2.0)")
 def dash(refresh):
     """Open the live terminal dashboard. Press Ctrl+C to exit."""
-    from infravision_agent.display.dashboard import run_dashboard
+    from sysdock.display.dashboard import run_dashboard
     run_dashboard(refresh=refresh)
 
 
@@ -84,7 +84,7 @@ def start(host, port, verbose):
         "[dim]Press Ctrl+C to stop[/dim]".format(tool=TOOL_NAME, host=host, port=port),
         border_style="cyan",
     ))
-    from infravision_agent.server import run_server
+    from sysdock.server import run_server
     run_server(host=host, port=port)
 
 
@@ -97,7 +97,7 @@ def start(host, port, verbose):
               default="all", show_default=True)
 def status(as_json, section):
     """Print a one-shot status snapshot to the terminal."""
-    from infravision_agent.collectors import (
+    from sysdock.collectors import (
         system as _sys, disk as _disk, processes as _proc,
         network as _net, docker_collector as _docker, security as _sec,
     )
@@ -295,90 +295,279 @@ def check():
     console.print(t)
 
 
+def _get_bin_path():
+    if getattr(sys, 'frozen', False):
+        return sys.executable
+    if os.name == 'nt':
+        return sys.executable + " -m sysdock"
+    bin_path = subprocess.run(["which", "sysdock"], capture_output=True, text=True).stdout.strip()
+    if not bin_path:
+        return sys.executable + " -m sysdock"
+    return bin_path
+
+def _get_user_home():
+    """Get the real user's home directory even if running via sudo"""
+    sudo_user = os.environ.get("SUDO_USER")
+    if sudo_user:
+        return os.path.expanduser(f"~{sudo_user}")
+    return os.path.expanduser("~")
+
+# ─── install-desktop ──────────────────────────────────────────────────────────
+
+@cli.command(name="install-desktop")
+def install_desktop():
+    """Create a desktop/app menu shortcut for SysDock (run without sudo!)."""
+    is_windows = (os.name == 'nt')
+    is_mac = (sys.platform == 'darwin')
+    bin_path = _get_bin_path()
+    
+    try:
+        if is_windows:
+            script = f'''
+$WshShell = New-Object -comObject WScript.Shell
+$Shortcut = $WshShell.CreateShortcut("$env:APPDATA\\Microsoft\\Windows\\Start Menu\\Programs\\SysDock.lnk")
+$Shortcut.TargetPath = "{sys.executable}"
+$Shortcut.Arguments = "-m sysdock dash"
+$Shortcut.WindowStyle = 1
+$Shortcut.IconLocation = "{sys.executable},0"
+$Shortcut.Description = "SysDock Monitoring Agent"
+$Shortcut.Save()
+'''
+            subprocess.run(["powershell", "-Command", script], capture_output=True, check=True)
+            console.print("[bold green]✓  Created Start Menu shortcut: SysDock[/bold green]")
+
+        elif is_mac:
+            app_dir = os.path.join(_get_user_home(), "Applications", "SysDock.app")
+            os.makedirs(os.path.join(app_dir, "Contents", "MacOS"), exist_ok=True)
+            os.makedirs(os.path.join(app_dir, "Contents", "Resources"), exist_ok=True)
+            
+            plist_path = os.path.join(app_dir, "Contents", "Info.plist")
+            with open(plist_path, "w") as f:
+                f.write("""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>SysDock</string>
+    <key>CFBundleIdentifier</key>
+    <string>io.sysdock.app</string>
+    <key>CFBundleName</key>
+    <string>SysDock</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>10.13</string>
+</dict>
+</plist>
+""")
+            
+            script_path = os.path.join(app_dir, "Contents", "MacOS", "SysDock")
+            with open(script_path, "w") as f:
+                f.write(f'''#!/bin/bash
+osascript -e 'tell application "Terminal" to do script "{bin_path} dash"' -e 'tell application "Terminal" to activate'
+''')
+            os.chmod(script_path, 0o755)
+            console.print(f"[bold green]✓  Created App shortcut: {app_dir}[/bold green]")
+
+        else:
+            desktop_dir = os.path.join(_get_user_home(), ".local", "share", "applications")
+            os.makedirs(desktop_dir, exist_ok=True)
+            desktop_path = os.path.join(desktop_dir, "sysdock.desktop")
+            
+            with open(desktop_path, "w") as f:
+                f.write(f"""[Desktop Entry]
+Version=1.0
+Name=SysDock
+Comment=SysDock Monitoring Dashboard
+Exec=x-terminal-emulator -e {bin_path} dash
+Terminal=false
+Type=Application
+Categories=System;Monitor;
+""")
+            console.print(f"[bold green]✓  Created App menu shortcut: {desktop_path}[/bold green]")
+            
+    except Exception as e:
+        console.print(f"[red]Failed to create shortcut: {e}[/red]")
+        sys.exit(1)
+
+
 # ─── install ──────────────────────────────────────────────────────────────────
 
 @cli.command()
 @click.option("--port", default=5010, show_default=True)
 @click.option("--host", default="0.0.0.0", show_default=True)
 def install(port, host):
-    """Install SysDock as a systemd service (requires root)."""
-    if os.name == 'nt':
-        console.print("[red]Service installation is currently Linux-only.[/red]")
+    """Install SysDock as a background persistent service (requires admin/root)."""
+    is_windows = (os.name == 'nt')
+    is_mac = (sys.platform == 'darwin')
+
+    if is_windows:
+        import ctypes
+        if ctypes.windll.shell32.IsUserAnAdmin() == 0:
+            console.print("[red]Run as Administrator to install the service.[/red]")
+            sys.exit(1)
+    else:
+        if os.geteuid() != 0:
+            console.print("[red]Run as root: sudo sysdock install[/red]")
+            sys.exit(1)
+
+    bin_path = _get_bin_path()
+
+    try:
+        if is_windows:
+            cmd = f'schtasks /create /tn SysDock /tr "\\"{bin_path}\\" start --host {host} --port {port}" /sc onstart /ru SYSTEM /rl HIGHEST /f'
+            subprocess.run(cmd, shell=True, check=True, capture_output=True)
+            subprocess.run(["schtasks", "/run", "/tn", "SysDock"], capture_output=True)
+            svc_name = "Task Scheduler: SysDock"
+
+        elif is_mac:
+            plist = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>io.sysdock.agent</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{bin_path}</string>
+        <string>start</string>
+        <string>--host</string>
+        <string>{host}</string>
+        <string>--port</string>
+        <string>{port}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardErrorPath</key>
+    <string>/var/log/sysdock.log</string>
+    <key>StandardOutPath</key>
+    <string>/var/log/sysdock.log</string>
+</dict>
+</plist>"""
+            svc_path = "/Library/LaunchDaemons/io.sysdock.agent.plist"
+            with open(svc_path, "w") as f:
+                f.write(plist)
+            subprocess.run(["launchctl", "unload", svc_path], capture_output=True)
+            subprocess.run(["launchctl", "load", svc_path], check=True, capture_output=True)
+            svc_name = "launchd: io.sysdock.agent"
+
+        else:
+            # Linux systemd
+            svc = f"""[Unit]
+Description=SysDock Monitoring Agent
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={bin_path} start --host {host} --port {port}
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+"""
+            svc_path = "/etc/systemd/system/sysdock.service"
+            with open(svc_path, "w") as f:
+                f.write(svc)
+
+            for cmd in [
+                ["systemctl", "daemon-reload"],
+                ["systemctl", "enable", "sysdock"],
+                ["systemctl", "restart", "sysdock"],
+            ]:
+                subprocess.run(cmd, check=False, capture_output=True)
+            svc_name = "systemd: sysdock.service"
+
+        console.print(Panel.fit(
+            f"[bold green]✓  Installed and started[/bold green]\n\n"
+            f"  Service : {svc_name}\n"
+            f"  Port    : {port}\n\n"
+            f"  [dim]Run 'sysdock uninstall' to remove.[/dim]\n\n"
+            f"[yellow]⚠  Open port {port} only from your monitoring server[/yellow]",
+            title="SysDock Installation Complete", border_style="green",
+        ))
+
+    except Exception as e:
+        console.print(f"[red]Failed to install service: {e}[/red]")
         sys.exit(1)
-
-    if os.geteuid() != 0:
-        console.print("[red]Run as root: sudo sysdock install[/red]")
-        sys.exit(1)
-
-    bin_path = subprocess.run(["which", "sysdock"], capture_output=True, text=True).stdout.strip()
-    if not bin_path:
-        bin_path = sys.executable + " -m infravision_agent"
-
-    svc = (
-        "[Unit]\n"
-        "Description=SysDock Monitoring Agent\n"
-        "After=network.target\n\n"
-        "[Service]\n"
-        "Type=simple\n"
-        "ExecStart={bin} start --host {host} --port {port}\n"
-        "Restart=always\n"
-        "RestartSec=10\n"
-        "StandardOutput=journal\n"
-        "StandardError=journal\n"
-        "Environment=PYTHONUNBUFFERED=1\n\n"
-        "[Install]\n"
-        "WantedBy=multi-user.target\n"
-    ).format(bin=bin_path, host=host, port=port)
-
-    svc_path = "/etc/systemd/system/sysdock.service"
-    with open(svc_path, "w") as f:
-        f.write(svc)
-
-    for cmd in [
-        ["systemctl", "daemon-reload"],
-        ["systemctl", "enable",  "sysdock"],
-        ["systemctl", "restart", "sysdock"],
-    ]:
-        subprocess.run(cmd, check=False)
-
-    console.print(Panel.fit(
-        "[bold green]✓  Installed and started[/bold green]\n\n"
-        "  Service : sysdock\n"
-        "  Port    : {port}\n\n"
-        "  [dim]journalctl -u sysdock -f[/dim]\n"
-        "  [dim]systemctl status sysdock[/dim]\n\n"
-        "[yellow]⚠  Open port {port} only from your monitoring server[/yellow]".format(port=port),
-        title="SysDock Installation Complete", border_style="green",
-    ))
 
 
 # ─── uninstall ────────────────────────────────────────────────────────────────
 
 @cli.command()
 def uninstall():
-    """Remove the SysDock systemd service (requires root)."""
-    if os.name == 'nt':
-        console.print("[red]Service installation is currently Linux-only.[/red]")
-        sys.exit(1)
+    """Remove the SysDock background service (requires admin/root)."""
+    is_windows = (os.name == 'nt')
+    is_mac = (sys.platform == 'darwin')
 
-    if os.geteuid() != 0:
-        console.print("[red]Run as root to remove the service: sudo sysdock uninstall[/red]")
+    if is_windows:
+        import ctypes
+        if ctypes.windll.shell32.IsUserAnAdmin() == 0:
+            console.print("[red]Run as Administrator to uninstall the service.[/red]")
+            sys.exit(1)
+    else:
+        if os.geteuid() != 0:
+            console.print("[red]Run as root: sudo sysdock uninstall[/red]")
+            sys.exit(1)
+    
+    try:
+        if is_windows:
+            subprocess.run(["schtasks", "/end", "/tn", "SysDock"], capture_output=True)
+            subprocess.run(["schtasks", "/delete", "/tn", "SysDock", "/f"], capture_output=True)
+            subprocess.run(["taskkill", "/f", "/im", "SysDock.exe"], capture_output=True)
+            subprocess.run(["taskkill", "/f", "/im", "sysdock.exe"], capture_output=True)
+
+        elif is_mac:
+            svc_path = "/Library/LaunchDaemons/io.sysdock.agent.plist"
+            if os.path.exists(svc_path):
+                subprocess.run(["launchctl", "unload", svc_path], capture_output=True)
+                os.remove(svc_path)
+
+        else:
+            # Linux
+            for cmd in [["systemctl", "stop", "sysdock"], ["systemctl", "disable", "sysdock"]]:
+                subprocess.run(cmd, capture_output=True)
+            
+            svc_path = "/etc/systemd/system/sysdock.service"
+            if os.path.exists(svc_path):
+                os.remove(svc_path)
+                subprocess.run(["systemctl", "daemon-reload"], capture_output=True)
+            
+        # Also remove desktop shortcuts
+        try:
+            home = _get_user_home()
+            if is_windows:
+                lnk = os.path.expandvars(r"%APPDATA%\Microsoft\Windows\Start Menu\Programs\SysDock.lnk")
+                if os.path.exists(lnk): os.remove(lnk)
+            elif is_mac:
+                for app_path in [
+                    os.path.join(home, "Applications", "SysDock.app"),
+                    "/Applications/SysDock.app"
+                ]:
+                    if os.path.exists(app_path):
+                        import shutil
+                        shutil.rmtree(app_path)
+            else:
+                desk = os.path.join(home, ".local", "share", "applications", "sysdock.desktop")
+                if os.path.exists(desk): os.remove(desk)
+        except Exception:
+            pass
+            
+        console.print(Panel.fit(
+            "[bold green]✓  SysDock service and shortcuts removed successfully[/bold green]\n\n"
+            "[dim]To completely remove the package, run as your normal user:[/dim]\n"
+            "  - pipx uninstall sysdock (if installed via pipx)\n"
+            "  - or simply delete the executable file.",
+            title="SysDock Uninstall", border_style="green"
+        ))
+    except Exception as e:
+        console.print(f"[red]Failed to uninstall service: {e}[/red]")
         sys.exit(1)
-    
-    for cmd in [["systemctl", "stop", "sysdock"], ["systemctl", "disable", "sysdock"]]:
-        subprocess.run(cmd, capture_output=True)
-    
-    svc = "/etc/systemd/system/sysdock.service"
-    if os.path.exists(svc):
-        os.remove(svc)
-        subprocess.run(["systemctl", "daemon-reload"])
-        
-    console.print(Panel.fit(
-        "[bold green]✓  SysDock service removed successfully[/bold green]\n\n"
-        "[dim]To completely remove the package, run as your normal user:[/dim]\n"
-        "  pipx uninstall sysdock",
-        title="SysDock Uninstall", border_style="green"
-    ))
 
 def main():
     cli()

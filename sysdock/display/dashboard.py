@@ -24,14 +24,14 @@ from rich.text import Text
 from rich.align import Align
 from rich import box
 
-from infravision_agent.collectors import (
+from sysdock.collectors import (
     system as _sys, disk as _disk, processes as _proc,
     network as _net, docker_collector as _docker, security as _sec,
 )
 
 console = Console(force_terminal=True)
 TOOL_NAME = "SysDock"
-VERSION   = "1.4.5"
+VERSION   = "1.4.6"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

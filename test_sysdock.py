@@ -73,44 +73,44 @@ def run_tests(quick=False, docker=False):
     # ── 1. Imports ────────────────────────────────────────
     section("1. Package imports")
 
-    check("Import infravision_agent package",
-          lambda: __import__("infravision_agent"))
+    check("Import sysdock package",
+          lambda: __import__("sysdock"))
 
     check("Import system collector",
-          lambda: __import__("infravision_agent.collectors.system",
+          lambda: __import__("sysdock.collectors.system",
                              fromlist=["collect_all"]))
 
     check("Import memory collector (get_memory)",
-          lambda: __import__("infravision_agent.collectors.system",
+          lambda: __import__("sysdock.collectors.system",
                              fromlist=["get_memory"]).get_memory)
 
     check("Import disk collector",
-          lambda: __import__("infravision_agent.collectors.disk",
+          lambda: __import__("sysdock.collectors.disk",
                              fromlist=["collect_all"]))
 
     check("Import process collector",
-          lambda: __import__("infravision_agent.collectors.processes",
+          lambda: __import__("sysdock.collectors.processes",
                              fromlist=["collect_all"]))
 
     check("Import network collector",
-          lambda: __import__("infravision_agent.collectors.network",
+          lambda: __import__("sysdock.collectors.network",
                              fromlist=["collect_all"]))
 
     check("Import docker collector",
-          lambda: __import__("infravision_agent.collectors.docker_collector",
+          lambda: __import__("sysdock.collectors.docker_collector",
                              fromlist=["collect_all"]))
 
     check("Import dashboard",
-          lambda: __import__("infravision_agent.display.dashboard",
+          lambda: __import__("sysdock.display.dashboard",
                              fromlist=["run_dashboard"]))
 
     check("Import CLI",
-          lambda: __import__("infravision_agent.cli", fromlist=["main"]))
+          lambda: __import__("sysdock.cli", fromlist=["main"]))
 
     # ── 2. System Collector ───────────────────────────────
     section("2. System collector (CPU, Memory, Load, Uptime)")
 
-    from infravision_agent.collectors import system as _sys
+    from sysdock.collectors import system as _sys
 
     cpu_data = check("get_cpu() returns dict with expected keys",
         lambda: _assert_keys(_sys.get_cpu(interval=None if quick else 1.0),
@@ -172,7 +172,7 @@ def run_tests(quick=False, docker=False):
 
     # ── 3. Disk Collector ─────────────────────────────────
     section("3. Disk collector")
-    from infravision_agent.collectors import disk as _disk
+    from sysdock.collectors import disk as _disk
 
     disk_data = check("disk collect_all() returns partitions list",
         lambda: _assert_keys(_disk.collect_all(), ["partitions"]))
@@ -189,7 +189,7 @@ def run_tests(quick=False, docker=False):
 
     # ── 4. Process Collector ──────────────────────────────
     section("4. Process collector")
-    from infravision_agent.collectors import processes as _proc
+    from sysdock.collectors import processes as _proc
 
     proc_data = check("processes collect_all() has top_by_cpu",
         lambda: _assert_keys(_proc.collect_all(), ["top_by_cpu", "summary"]))
@@ -205,7 +205,7 @@ def run_tests(quick=False, docker=False):
 
     # ── 5. Network Collector ──────────────────────────────
     section("5. Network collector")
-    from infravision_agent.collectors import network as _net
+    from sysdock.collectors import network as _net
 
     net_data = check("network collect_all() has interfaces",
         lambda: _assert_keys(_net.collect_all(), ["interfaces", "connections"]))
@@ -216,7 +216,7 @@ def run_tests(quick=False, docker=False):
 
     # ── 6. Docker Collector ───────────────────────────────
     section("6. Docker collector")
-    from infravision_agent.collectors import docker_collector as _dkr
+    from sysdock.collectors import docker_collector as _dkr
 
     dkr_data = check("docker collect_all() returns dict with 'available'",
         lambda: _assert_keys(_dkr.collect_all(), ["available", "containers", "images"]))
@@ -253,7 +253,7 @@ def run_tests(quick=False, docker=False):
     section("7. Full JSON snapshot (collect_all on all modules)")
 
     def _full_snapshot():
-        from infravision_agent.collectors import (
+        from sysdock.collectors import (
             system as s, disk as d, processes as p,
             network as n, docker_collector as dkr,
         )

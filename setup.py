@@ -6,10 +6,12 @@ from setuptools import setup, find_packages
 
 setup(
     name="sysdock",
-    version="1.4.5",
+    version="1.4.6",
     description="SysDock — Modern Linux monitoring agent with live terminal dashboard and Docker metrics",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
+    author="Kavy Vachhani",
+    author_email="kavy@vachhani.com",
     url="https://github.com/Kavyvachhani/SysDock",
     project_urls={
         "Homepage": "https://github.com/Kavyvachhani/SysDock",
@@ -17,7 +19,7 @@ setup(
     },
     license="MIT",
     python_requires=">=3.6",
-    packages=find_packages(include=["infravision_agent", "infravision_agent.*"]),
+    packages=find_packages(include=["sysdock", "sysdock.*"]),
     install_requires=[
         "psutil>=5.8.0",
         "rich>=12.0.0",
@@ -30,7 +32,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "sysdock=infravision_agent.cli:main",
+            "sysdock=sysdock.cli:main",
         ],
     },
     classifiers=[

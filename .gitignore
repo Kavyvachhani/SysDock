@@ -24,3 +24,7 @@ Thumbs.db
 # PyInstaller — EXE and spec files stay local only
 *.spec
 *.exe
+
+# Local macOS package build artifacts
+mac/*.pkg
+pkg_root_local/

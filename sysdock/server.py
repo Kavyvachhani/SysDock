@@ -1,5 +1,5 @@
 """
-InfraVision Agent — Single-Port Live JSON Server
+SysDock Agent — Single-Port Live JSON Server
 ================================================
 ALL system metrics served from ONE port (default 5010).
 
@@ -12,10 +12,10 @@ GET /health     Quick liveness probe
 Usage
 -----
 Start via CLI:
-    infravision start --port 5010
+    sysdock start --port 5010
 
 Or from Python:
-    from infravision_agent.server import run_server
+    from sysdock.server import run_server
     run_server(port=5010)
 
 Curl examples:
@@ -44,7 +44,7 @@ else:
     class _Base(ThreadingMixIn, HTTPServer):
         daemon_threads = True
 
-from infravision_agent.collectors import (
+from sysdock.collectors import (
     system      as _sys,
     disk        as _disk,
     processes   as _proc,
@@ -53,7 +53,7 @@ from infravision_agent.collectors import (
     security    as _sec,
 )
 
-log = logging.getLogger("infravision.server")
+log = logging.getLogger("sysdock.server")
 
 AGENT_VERSION   = "1.0.0"
 STREAM_INTERVAL = 5   # seconds between SSE pushes
@@ -169,7 +169,7 @@ def _stop():
 
 class _Handler(BaseHTTPRequestHandler):
 
-    server_version   = "InfraVision/" + AGENT_VERSION
+    server_version   = "SysDock/" + AGENT_VERSION
     protocol_version = "HTTP/1.1"
 
     def log_message(self, fmt, *args):
@@ -290,7 +290,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin",  "*")
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.send_header("X-Agent", "infravision/" + AGENT_VERSION)
+        self.send_header("X-Agent", "sysdock/" + AGENT_VERSION)
 
     def _json(self, data, status=200):
         body = json.dumps(data, indent=2, default=str).encode("utf-8")
@@ -314,7 +314,7 @@ def run_server(host="0.0.0.0", port=5010):
     display = host if host != "0.0.0.0" else _hostname()
     sep = "=" * 58
     log.info(sep)
-    log.info("  InfraVision Agent  v%s", AGENT_VERSION)
+    log.info("  SysDock Agent  v%s", AGENT_VERSION)
     log.info("  All metrics  ->  http://%s:%d/", display, port)
     log.info("  Live stream  ->  http://%s:%d/stream", display, port)
     log.info("  Health       ->  http://%s:%d/health", display, port)
