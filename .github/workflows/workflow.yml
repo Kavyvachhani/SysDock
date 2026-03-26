@@ -64,7 +64,7 @@ jobs:
   # ── Publish to PyPI (OIDC Trusted Publisher) ────────────────────────────────
   publish:
     name: Publish to PyPI
-    needs: [build, test]
+    needs: [build, test, build_exe]   # only after all tests AND all native builds pass
     runs-on: ubuntu-latest
     environment: sysdock
     permissions:
@@ -211,14 +211,14 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force -Path dist\SysDock_Windows
           New-Item -ItemType Directory -Force -Path dist\${{ matrix.out_dir }}
           $exe = "dist\sysdock.exe"
           if (Test-Path $exe) {
-            New-Item -ItemType Directory -Force -Path dist\SysDock_Windows
-            Copy-Item $exe dist\SysDock_Windows\sysdock.exe
+            Copy-Item $exe dist\SysDock_Windows\sysdock.exe -Force
           } else {
-            New-Item -ItemType Directory -Force -Path dist\SysDock_Windows
-            Get-ChildItem dist -Recurse -Include "*.exe" | Copy-Item -Destination dist\SysDock_Windows\
+            # Only look in the top-level dist folder (not recursive) to avoid self-copy
+            Get-ChildItem -Path dist -Depth 1 -Include "*.exe" | Copy-Item -Destination dist\SysDock_Windows\ -Force
           }
           Compress-Archive -Path "dist\SysDock_Windows" -DestinationPath "dist\${{ matrix.out_dir }}\${{ matrix.dist_file }}" -Force
           Set-Content dist\${{ matrix.out_dir }}\README.txt "Extract the zip and run sysdock.exe inside the folder to start SysDock on Windows."
@@ -233,7 +233,7 @@ jobs:
   # ── Publish to GitHub Releases (versioned tag + rolling 'latest') ──────────
   release_latest:
     name: Publish GitHub Release
-    needs: build_exe
+    needs: [build_exe, publish]   # only after native builds AND pip publish all pass
     runs-on: ubuntu-latest
     # Only runs on tag pushes (not bare 'release: published' events that lack a tag)
     if: startsWith(github.ref, 'refs/tags/v')
