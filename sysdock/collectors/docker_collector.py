@@ -10,11 +10,11 @@ Accuracy notes:
 - Memory %: use `inactive_file` (cgroups v2) or `cache` (cgroups v1) to
   subtract the page cache from usage, matching `docker stats` output.
 """
+
 from __future__ import annotations
 
 import json as _json
 import subprocess
-import re
 from datetime import datetime
 
 
@@ -65,6 +65,7 @@ def _docker_reachable():
 def _get_sdk_client():
     try:
         import docker
+
         return docker.from_env(timeout=10)
     except Exception:
         return None
@@ -72,31 +73,35 @@ def _get_sdk_client():
 
 # ── Stats parsing ────────────────────────────────────────────────────────────
 
+
 def _parse_stats(raw):
     """
     Parses a raw stats dict from the Docker API into friendly numbers.
     Matches docker stats CLI output exactly.
     """
     try:
-        cpu_delta = (raw["cpu_stats"]["cpu_usage"]["total_usage"]
-                   - raw["precpu_stats"]["cpu_usage"]["total_usage"])
-        sys_delta = (raw["cpu_stats"].get("system_cpu_usage", 0)
-                   - raw["precpu_stats"].get("system_cpu_usage", 0))
-        ncpu = (raw["cpu_stats"].get("online_cpus")
-                or len(raw["cpu_stats"]["cpu_usage"].get("percpu_usage", [1])))
+        cpu_delta = (
+            raw["cpu_stats"]["cpu_usage"]["total_usage"]
+            - raw["precpu_stats"]["cpu_usage"]["total_usage"]
+        )
+        sys_delta = raw["cpu_stats"].get("system_cpu_usage", 0) - raw["precpu_stats"].get(
+            "system_cpu_usage", 0
+        )
+        ncpu = raw["cpu_stats"].get("online_cpus") or len(
+            raw["cpu_stats"]["cpu_usage"].get("percpu_usage", [1])
+        )
         cpu_pct = (cpu_delta / sys_delta) * ncpu * 100.0 if sys_delta > 0 else 0.0
 
         mem = raw.get("memory_stats", {})
         mem_usage = mem.get("usage", 0)
-        limit     = mem.get("limit", 1)
+        limit = mem.get("limit", 1)
 
         # Subtract page cache to get actual RSS — matches docker stats output.
         # cgroups v1: stats.cache
         # cgroups v2: stats.inactive_file (more accurate)
         stats_block = mem.get("stats", {})
-        cache = stats_block.get("inactive_file",
-                stats_block.get("cache", 0))
-        used  = max(0, mem_usage - cache)
+        cache = stats_block.get("inactive_file", stats_block.get("cache", 0))
+        used = max(0, mem_usage - cache)
 
         mem_pct = (used / limit * 100.0) if limit else 0.0
 
@@ -106,62 +111,70 @@ def _parse_stats(raw):
             net_tx += nd.get("tx_bytes", 0)
 
         blk_r = blk_w = 0
-        for e in (raw.get("blkio_stats", {}).get("io_service_bytes_recursive") or []):
+        for e in raw.get("blkio_stats", {}).get("io_service_bytes_recursive") or []:
             op = (e.get("op") or "").lower()
-            if op == "read":  blk_r += e.get("value", 0)
-            if op == "write": blk_w += e.get("value", 0)
+            if op == "read":
+                blk_r += e.get("value", 0)
+            if op == "write":
+                blk_w += e.get("value", 0)
 
         return {
-            "cpu_pct":      round(cpu_pct,  2),
-            "mem_used_mb":  round(used  / 1024 ** 2, 1),
-            "mem_limit_mb": round(limit / 1024 ** 2, 1),
-            "mem_pct":      round(mem_pct,  2),
-            "net_rx_mb":    round(net_rx    / 1024 ** 2, 2),
-            "net_tx_mb":    round(net_tx    / 1024 ** 2, 2),
-            "blk_read_mb":  round(blk_r     / 1024 ** 2, 2),
-            "blk_write_mb": round(blk_w     / 1024 ** 2, 2),
-            "pids":         raw.get("pids_stats", {}).get("current", 0),
+            "cpu_pct": round(cpu_pct, 2),
+            "mem_used_mb": round(used / 1024**2, 1),
+            "mem_limit_mb": round(limit / 1024**2, 1),
+            "mem_pct": round(mem_pct, 2),
+            "net_rx_mb": round(net_rx / 1024**2, 2),
+            "net_tx_mb": round(net_tx / 1024**2, 2),
+            "blk_read_mb": round(blk_r / 1024**2, 2),
+            "blk_write_mb": round(blk_w / 1024**2, 2),
+            "pids": raw.get("pids_stats", {}).get("current", 0),
         }
     except Exception as e:
-        return {"error": str(e), "cpu_pct": 0.0, "mem_pct": 0.0,
-                "mem_used_mb": 0.0, "mem_limit_mb": 0.0}
+        return {
+            "error": str(e),
+            "cpu_pct": 0.0,
+            "mem_pct": 0.0,
+            "mem_used_mb": 0.0,
+            "mem_limit_mb": 0.0,
+        }
 
 
 # ── SDK path ─────────────────────────────────────────────────────────────────
 
+
 def _collect_sdk(client):
     try:
         info = client.info()
-        ver  = client.version()
+        ver = client.version()
     except Exception as e:
         return {"available": True, "error": str(e), "containers": [], "images": [], "volumes": []}
 
     version_info = {
-        "version":            ver.get("Version"),
-        "api_version":        ver.get("ApiVersion"),
-        "total_containers":   info.get("Containers"),
+        "version": ver.get("Version"),
+        "api_version": ver.get("ApiVersion"),
+        "total_containers": info.get("Containers"),
         "running_containers": info.get("ContainersRunning"),
         "stopped_containers": info.get("ContainersStopped"),
-        "total_images":       info.get("Images"),
-        "storage_driver":     info.get("Driver"),
+        "total_images": info.get("Images"),
+        "storage_driver": info.get("Driver"),
     }
 
     containers = []
     try:
         for c in client.containers.list(all=True):
-            attrs  = c.attrs
-            state  = attrs.get("State", {})
+            attrs = c.attrs
+            state = attrs.get("State", {})
             status = state.get("Status", "unknown")  # "running", "exited", "paused"
-            entry  = {
-                "id":            c.short_id,
-                "name":          c.name,
-                "image":         attrs.get("Config", {}).get("Image", "?"),
-                "status":        status,
-                "state":         status,  # normalized: running / exited / paused
-                "created":       attrs.get("Created", "")[:19],
+            entry = {
+                "id": c.short_id,
+                "name": c.name,
+                "image": attrs.get("Config", {}).get("Image", "?"),
+                "status": status,
+                "state": status,  # normalized: running / exited / paused
+                "created": attrs.get("Created", "")[:19],
                 "restart_count": attrs.get("RestartCount", 0),
-                "ports":         {},
-                "stats":         None,
+                "ports": {},
+                "stats": None,
             }
             # Port bindings
             for cp, hbs in (attrs.get("HostConfig", {}).get("PortBindings") or {}).items():
@@ -181,23 +194,27 @@ def _collect_sdk(client):
     try:
         for img in client.images.list():
             tags = img.tags or ["<none>:<none>"]
-            images.append({
-                "id":      img.short_id,
-                "tags":    tags,
-                "size_mb": round(img.attrs.get("Size", 0) / 1024 ** 2, 1),
-                "created": img.attrs.get("Created", "")[:19],
-            })
+            images.append(
+                {
+                    "id": img.short_id,
+                    "tags": tags,
+                    "size_mb": round(img.attrs.get("Size", 0) / 1024**2, 1),
+                    "created": img.attrs.get("Created", "")[:19],
+                }
+            )
     except Exception:
         pass
 
     volumes = []
     try:
         for v in client.volumes.list():
-            volumes.append({
-                "name":       v.name,
-                "driver":     v.attrs.get("Driver"),
-                "mountpoint": v.attrs.get("Mountpoint"),
-            })
+            volumes.append(
+                {
+                    "name": v.name,
+                    "driver": v.attrs.get("Driver"),
+                    "mountpoint": v.attrs.get("Mountpoint"),
+                }
+            )
     except Exception:
         pass
 
@@ -205,21 +222,24 @@ def _collect_sdk(client):
     version_info["disk_usage"] = df_disk
 
     return {
-        "available":  True,
-        "via":        "sdk",
-        "version":    version_info,
+        "available": True,
+        "via": "sdk",
+        "version": version_info,
         "containers": sorted(containers, key=lambda x: x.get("name", "")),
-        "images":     images,
-        "volumes":    volumes,
+        "images": images,
+        "volumes": volumes,
     }
 
 
 # ── CLI path ─────────────────────────────────────────────────────────────────
 
+
 def _collect_cli():
     # List all containers
-    fmt = ('{"id":"{{.ID}}","name":"{{.Names}}","image":"{{.Image}}",'
-           '"status":"{{.Status}}","state":"{{.State}}"}')
+    fmt = (
+        '{"id":"{{.ID}}","name":"{{.Names}}","image":"{{.Image}}",'
+        '"status":"{{.Status}}","state":"{{.State}}"}'
+    )
     out, rc = _run(["docker", "ps", "-a", "--format", fmt])
     containers = []
     if rc == 0:
@@ -237,9 +257,11 @@ def _collect_cli():
                 pass
 
     # Live stats (no-stream) for running containers
-    stats_fmt = ('{"name":"{{.Name}}","cpu":"{{.CPUPerc}}",'
-                 '"mem":"{{.MemPerc}}","mem_usage":"{{.MemUsage}}",'
-                 '"net_io":"{{.NetIO}}","pids":"{{.PIDs}}"}')
+    stats_fmt = (
+        '{"name":"{{.Name}}","cpu":"{{.CPUPerc}}",'
+        '"mem":"{{.MemPerc}}","mem_usage":"{{.MemUsage}}",'
+        '"net_io":"{{.NetIO}}","pids":"{{.PIDs}}"}'
+    )
     out_s, rc_s = _run(["docker", "stats", "--no-stream", "--format", stats_fmt], timeout=20)
     stats_map = {}
     if rc_s == 0:
@@ -280,12 +302,12 @@ def _collect_cli():
                     pass
 
                 stats_map[name] = {
-                    "cpu_pct":     cpu_val,
-                    "mem_pct":     mem_val,
-                    "mem_usage":   mem_usage_str,
+                    "cpu_pct": cpu_val,
+                    "mem_pct": mem_val,
+                    "mem_usage": mem_usage_str,
                     "mem_used_mb": mem_used_mb,
-                    "net_io":      s.get("net_io", ""),
-                    "pids":        s.get("pids", ""),
+                    "net_io": s.get("net_io", ""),
+                    "pids": s.get("pids", ""),
                 }
             except Exception:
                 pass
@@ -297,8 +319,10 @@ def _collect_cli():
         c["stats"] = stats_map.get(cname) or stats_map.get(c.get("name", ""))
 
     # Images
-    img_fmt = ('{"id":"{{.ID}}","repository":"{{.Repository}}",'
-               '"tag":"{{.Tag}}","size":"{{.Size}}","created":"{{.CreatedAt}}"}')
+    img_fmt = (
+        '{"id":"{{.ID}}","repository":"{{.Repository}}",'
+        '"tag":"{{.Tag}}","size":"{{.Size}}","created":"{{.CreatedAt}}"}'
+    )
     out_i, rc_i = _run(["docker", "images", "--format", img_fmt])
     images = []
     if rc_i == 0:
@@ -309,14 +333,16 @@ def _collect_cli():
             try:
                 img = _json.loads(line)
                 repo = img.get("repository", "<none>")
-                tag  = img.get("tag", "<none>")
-                images.append({
-                    "id":      img.get("id", "")[:12],
-                    "tags":    ["{repo}:{tag}".format(repo=repo, tag=tag)],
-                    "size_mb": 0,       # CLI doesn't give bytes easily
-                    "size":    img.get("size", "?"),
-                    "created": img.get("created", "")[:19],
-                })
+                tag = img.get("tag", "<none>")
+                images.append(
+                    {
+                        "id": img.get("id", "")[:12],
+                        "tags": [f"{repo}:{tag}"],
+                        "size_mb": 0,  # CLI doesn't give bytes easily
+                        "size": img.get("size", "?"),
+                        "created": img.get("created", "")[:19],
+                    }
+                )
             except Exception:
                 pass
 
@@ -330,32 +356,33 @@ def _collect_cli():
         pass
 
     # Add image/container counts to version_info
-    version_info["total_containers"]   = len(containers)
+    version_info["total_containers"] = len(containers)
     version_info["running_containers"] = sum(1 for c in containers if c.get("state") == "running")
-    version_info["total_images"]       = len(images)
+    version_info["total_images"] = len(images)
 
     df_disk = _parse_docker_df()
     version_info["disk_usage"] = df_disk
 
     return {
-        "available":  True,
-        "via":        "cli",
-        "version":    version_info,
+        "available": True,
+        "via": "cli",
+        "version": version_info,
         "containers": containers,
-        "images":     images,
-        "volumes":    [],
+        "images": images,
+        "volumes": [],
     }
 
 
 # ── Collect ───────────────────────────────────────────────────────────────────
 
+
 def collect_all():
     if not _docker_reachable():
         return {
-            "available":    False,
-            "error":        "Docker daemon not reachable or not installed",
-            "containers":   [],
-            "images":       [],
+            "available": False,
+            "error": "Docker daemon not reachable or not installed",
+            "containers": [],
+            "images": [],
             "collected_at": datetime.utcnow().isoformat() + "Z",
         }
 

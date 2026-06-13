@@ -2,10 +2,16 @@
 dist/
 build/
 *.egg-info/
+.eggs/
 __pycache__/
 *.pyc
 *.pyo
-.eggs/
+
+# Test / type caches
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
 
 # Virtual envs
 .venv/
@@ -20,6 +26,8 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+# macOS AppleDouble metadata
+._*
 
 # PyInstaller — EXE and spec files stay local only
 *.spec

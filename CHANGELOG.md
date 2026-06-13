@@ -1,6 +1,47 @@
 # Changelog
 
-All notable changes to SysDock are documented here.
+All notable changes to SysDock are documented here. This project adheres to
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+Hardening toward a production-ready v2. **Phase 0 — Foundation & hardening harness.**
+
+### Added
+- `sysdock.core.proc`: the single audited subprocess helper — argument lists
+  only, never a shell, mandatory timeout, tolerant of missing binaries and
+  non-zero exits; returns a typed `ProcResult` and never raises on command
+  failures.
+- `sysdock.core.capabilities`: injectable, cross-platform capability detection
+  (firewall, intrusion, auth-log, GPU, containers, service manager). Linux,
+  macOS, and Windows paths are all unit-tested on any runner.
+- `sysdock.core.logging`: structured logging with `--log-level` and `--json-logs`,
+  plus a filter that redacts bearer tokens and secrets from all log output.
+- `sysdock.core.errors`: error taxonomy (`SysdockError`, `UsageError`,
+  `CapabilityUnavailable`, `CollectionError`) and stable `ExitCode`s.
+- Global CLI error boundary: no unhandled exception reaches the user — failures
+  render a clean message with the correct exit code; tracebacks only at DEBUG.
+- `sysdock check` now reports the detected capability matrix (with `--json`);
+  new `sysdock version` command.
+- Tooling: ruff (lint+format), mypy (strict on `sysdock/core`), pytest+coverage,
+  pre-commit, Dependabot, and a 3-OS GitHub Actions CI matrix (lint/type/test +
+  build sanity). Committed dev lockfile (`requirements-dev.txt`).
+- `SECURITY.md` (bind/auth model, subprocess safety, disclosure) and
+  `CONTRIBUTING.md`.
+
+### Changed
+- Single version source of truth in `sysdock/__init__.py` (now `2.0.0.dev0`);
+  the server no longer hardcodes a divergent version.
+- Migrated packaging to PEP 621; Python floor raised to **3.9** (CI tests 3.9 and
+  3.12). Removed the duplicate, version-drifted `setup.py`.
+
+### Security
+- Removed a `shell=True` subprocess invocation in the Windows service install
+  path; the task command is now passed as a single non-shell argv entry.
+
+### Removed
+- Committed macOS AppleDouble (`._*`) metadata files; now git-ignored.
 
 ## [1.4.0] - 2026-03-25
 
@@ -13,7 +54,7 @@ All notable changes to SysDock are documented here.
 - **Security collector** now respects platform (safe on macOS/Windows)
 - **GitHub Actions multi-arch workflow** with Ubuntu + macOS matrix, produces arm64 .whl and amd64 .whl
 - **Automated test suite** covering all collectors on all 3 platforms
-- **Zero SmartScreen warnings**: build manifest and authenticode metadata embedded in Windows EXE
+- ~~**Zero SmartScreen warnings**: build manifest and authenticode metadata embedded in Windows EXE~~ *(Correction: this claim was inaccurate — the Windows EXE is not code-signed, so SmartScreen does warn. Real signing/notarization is tracked for the Phase 6 installer work.)*
 - **Atomic batch data collection** in dashboard background loop — prevents all UI jitter/flapping
 - **Panel versioning**: UI only redraws when data version increments, locking the header stable
 - `screen=False` mode on Windows to prevent alternate-buffer flickering

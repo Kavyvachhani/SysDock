@@ -23,13 +23,14 @@ Curl examples:
     curl -N http://ec2-ip:5010/stream
     curl http://ec2-ip:5010/health
 """
+
 from __future__ import annotations
 
 import json
 import logging
+import os
 import socket
 import sys
-import os
 import threading
 import time
 from datetime import datetime, timezone
@@ -37,60 +38,73 @@ from urllib.parse import parse_qs, urlparse
 
 # ThreadingHTTPServer ships with Python 3.7+; polyfill for 3.6
 if sys.version_info >= (3, 7):
-    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer as _Base
+    from http.server import BaseHTTPRequestHandler
+    from http.server import ThreadingHTTPServer as _Base
 else:
     from http.server import BaseHTTPRequestHandler, HTTPServer
     from socketserver import ThreadingMixIn
+
     class _Base(ThreadingMixIn, HTTPServer):
         daemon_threads = True
 
+
+from sysdock import __version__ as AGENT_VERSION
 from sysdock.collectors import (
-    system      as _sys,
-    disk        as _disk,
-    processes   as _proc,
-    network     as _net,
+    disk as _disk,
+)
+from sysdock.collectors import (
     docker_collector as _docker,
-    security    as _sec,
+)
+from sysdock.collectors import (
+    network as _net,
+)
+from sysdock.collectors import (
+    processes as _proc,
+)
+from sysdock.collectors import (
+    security as _sec,
+)
+from sysdock.collectors import (
+    system as _sys,
 )
 
 log = logging.getLogger("sysdock.server")
-
-AGENT_VERSION   = "1.0.0"
-STREAM_INTERVAL = 5   # seconds between SSE pushes
+STREAM_INTERVAL = 5  # seconds between SSE pushes
 
 # How often each collector refreshes in the background (seconds)
 _REFRESH = {
-    "system":    5,
+    "system": 5,
     "processes": 5,
-    "network":   5,
-    "disk":      15,
-    "docker":    10,
-    "security":  30,
+    "network": 5,
+    "disk": 15,
+    "docker": 10,
+    "security": 30,
 }
 
 _COLLECTORS = {
-    "system":    _sys.collect_all,
-    "disk":      _disk.collect_all,
+    "system": _sys.collect_all,
+    "disk": _disk.collect_all,
     "processes": _proc.collect_all,
-    "network":   _net.collect_all,
-    "docker":    _docker.collect_all,
-    "security":  _sec.collect_all,
+    "network": _net.collect_all,
+    "docker": _docker.collect_all,
+    "security": _sec.collect_all,
 }
 
 
 # ─── Shared live snapshot ─────────────────────────────────────────────────────
 
+
 class _Snapshot:
     """Thread-safe store written by background collector threads."""
 
     def __init__(self):
-        self._data    = {}    # section → dict
-        self._updated = {}    # section → float (unix timestamp)
-        self._lock    = threading.RLock()
+        self._data = {}  # section → dict
+        self._updated = {}  # section → float (unix timestamp)
+        self._lock = threading.RLock()
 
     def put(self, key, value):
         with self._lock:
-            self._data[key]    = value
+            self._data[key] = value
             self._updated[key] = time.time()
 
     def ready(self):
@@ -103,22 +117,17 @@ class _Snapshot:
             out["_meta"] = {
                 "agent_version": AGENT_VERSION,
                 "hostname": (
-                    self._data.get("system", {})
-                               .get("hostname", {})
-                               .get("hostname", _hostname())
+                    self._data.get("system", {}).get("hostname", {}).get("hostname", _hostname())
                 ),
-                "snapshot_at":  _now(),
-                "sections_age": {
-                    k: round(time.time() - v, 1)
-                    for k, v in self._updated.items()
-                },
-                "python":    "{}.{}.{}".format(*sys.version_info[:3]),
+                "snapshot_at": _now(),
+                "sections_age": {k: round(time.time() - v, 1) for k, v in self._updated.items()},
+                "python": "{}.{}.{}".format(*sys.version_info[:3]),
                 "collectors": list(_COLLECTORS.keys()),
             }
             return out
 
 
-_snap      = _Snapshot()
+_snap = _Snapshot()
 _stop_flag = threading.Event()
 
 
@@ -138,6 +147,7 @@ def _now():
 
 # ─── Background collector threads ─────────────────────────────────────────────
 
+
 def _loop(key, fn, interval):
     while not _stop_flag.is_set():
         try:
@@ -151,8 +161,9 @@ def _loop(key, fn, interval):
 def _start():
     _stop_flag.clear()
     for key, fn in _COLLECTORS.items():
-        t = threading.Thread(target=_loop, args=(key, fn, _REFRESH[key]),
-                             name="iv-col-" + key, daemon=True)
+        t = threading.Thread(
+            target=_loop, args=(key, fn, _REFRESH[key]), name="iv-col-" + key, daemon=True
+        )
         t.start()
     log.info("Waiting for initial collection (max 25s)…")
     deadline = time.time() + 25
@@ -167,9 +178,9 @@ def _stop():
 
 # ─── HTTP handler ─────────────────────────────────────────────────────────────
 
-class _Handler(BaseHTTPRequestHandler):
 
-    server_version   = "SysDock/" + AGENT_VERSION
+class _Handler(BaseHTTPRequestHandler):
+    server_version = "SysDock/" + AGENT_VERSION
     protocol_version = "HTTP/1.1"
 
     def log_message(self, fmt, *args):
@@ -196,7 +207,7 @@ class _Handler(BaseHTTPRequestHandler):
 
         try:
             parsed = urlparse(self.path)
-            path   = parsed.path.rstrip("/") or "/"
+            path = parsed.path.rstrip("/") or "/"
             params = parse_qs(parsed.query)
 
             if path in ("/", "/metrics"):
@@ -206,15 +217,18 @@ class _Handler(BaseHTTPRequestHandler):
             elif path == "/health":
                 self._health()
             else:
-                self._json({
-                    "error": "Not found: {}".format(path),
-                    "hint": "All metrics at  GET :5010/",
-                    "endpoints": {
-                        "GET /":       "Complete live JSON — all sections in one response",
-                        "GET /stream": "Server-Sent Events, pushes JSON every 5s",
-                        "GET /health": "Liveness probe",
+                self._json(
+                    {
+                        "error": f"Not found: {path}",
+                        "hint": "All metrics at  GET :5010/",
+                        "endpoints": {
+                            "GET /": "Complete live JSON — all sections in one response",
+                            "GET /stream": "Server-Sent Events, pushes JSON every 5s",
+                            "GET /health": "Liveness probe",
+                        },
                     },
-                }, 404)
+                    404,
+                )
         except (OSError, BrokenPipeError, ConnectionResetError):
             pass
         except Exception as exc:
@@ -228,14 +242,14 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _full(self, params):
         pretty = params.get("pretty", ["1"])[0] != "0"
-        body   = json.dumps(_snap.get_all(),
-                            indent=2 if pretty else None,
-                            default=str).encode("utf-8")
+        body = json.dumps(_snap.get_all(), indent=2 if pretty else None, default=str).encode(
+            "utf-8"
+        )
         self.send_response(200)
         self._cors()
-        self.send_header("Content-Type",   "application/json; charset=utf-8")
+        self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control",  "no-cache, no-store")
+        self.send_header("Cache-Control", "no-cache, no-store")
         self.end_headers()
         self.wfile.write(body)
 
@@ -248,8 +262,8 @@ class _Handler(BaseHTTPRequestHandler):
 
         self.send_response(200)
         self._cors()
-        self.send_header("Content-Type",      "text/event-stream; charset=utf-8")
-        self.send_header("Cache-Control",     "no-cache")
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
         self.send_header("Transfer-Encoding", "chunked")
         self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
@@ -257,9 +271,9 @@ class _Handler(BaseHTTPRequestHandler):
         log.info("SSE client connected: %s (%.0fs)", self.address_string(), interval)
         try:
             while True:
-                body  = json.dumps(_snap.get_all(), default=str)
-                msg   = ("data: {}\n\n".format(body)).encode("utf-8")
-                chunk = "{:x}\r\n".format(len(msg)).encode() + msg + b"\r\n"
+                body = json.dumps(_snap.get_all(), default=str)
+                msg = (f"data: {body}\n\n").encode()
+                chunk = f"{len(msg):x}\r\n".encode() + msg + b"\r\n"
                 self.wfile.write(chunk)
                 self.wfile.flush()
                 time.sleep(interval)
@@ -268,18 +282,21 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _health(self):
         sys_d = _snap.get_all().get("system", {})
-        body  = json.dumps({
-            "status":        "ok",
-            "agent_version": AGENT_VERSION,
-            "hostname":      sys_d.get("hostname", {}).get("hostname", "?"),
-            "uptime":        sys_d.get("uptime",   {}).get("uptime_human", "?"),
-            "timestamp":     _now(),
-            "port":          5010,
-            "collectors":    list(_COLLECTORS.keys()),
-        }, indent=2).encode("utf-8")
+        body = json.dumps(
+            {
+                "status": "ok",
+                "agent_version": AGENT_VERSION,
+                "hostname": sys_d.get("hostname", {}).get("hostname", "?"),
+                "uptime": sys_d.get("uptime", {}).get("uptime_human", "?"),
+                "timestamp": _now(),
+                "port": 5010,
+                "collectors": list(_COLLECTORS.keys()),
+            },
+            indent=2,
+        ).encode("utf-8")
         self.send_response(200)
         self._cors()
-        self.send_header("Content-Type",   "application/json; charset=utf-8")
+        self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -287,7 +304,7 @@ class _Handler(BaseHTTPRequestHandler):
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _cors(self):
-        self.send_header("Access-Control-Allow-Origin",  "*")
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("X-Agent", "sysdock/" + AGENT_VERSION)
@@ -296,13 +313,14 @@ class _Handler(BaseHTTPRequestHandler):
         body = json.dumps(data, indent=2, default=str).encode("utf-8")
         self.send_response(status)
         self._cors()
-        self.send_header("Content-Type",   "application/json; charset=utf-8")
+        self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
 
 # ─── Public API ───────────────────────────────────────────────────────────────
+
 
 def run_server(host="0.0.0.0", port=5010):
     """Start the metrics server. Blocks until Ctrl-C."""
@@ -331,7 +349,8 @@ def run_server(host="0.0.0.0", port=5010):
 
 def run_server_background(host="0.0.0.0", port=5010):
     """Start the server in a daemon thread. Returns the thread."""
-    t = threading.Thread(target=run_server, args=(host, port),
-                         name="iv-server-{}".format(port), daemon=True)
+    t = threading.Thread(
+        target=run_server, args=(host, port), name=f"iv-server-{port}", daemon=True
+    )
     t.start()
     return t

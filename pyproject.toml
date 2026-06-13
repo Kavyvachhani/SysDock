@@ -1,25 +1,26 @@
 [build-system]
-requires = ["setuptools>=42", "wheel"]
+requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "sysdock"
-version = "1.4.6"
+dynamic = ["version"]
 authors = [
   { name = "Kavy Vachhani", email = "kavyvachhani@gmail.com" }
 ]
-description = "SysDock — Modern cross-platform monitoring agent (Linux, macOS, Windows) with live terminal dashboard, GPU metrics and Docker support"
+description = "Lean cross-platform monitoring agent: terminal + web dashboard, Prometheus metrics, and a security panel (firewall, open ports, failed auth)."
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.8"
-keywords = ["monitoring", "metrics", "ec2", "linux", "devops", "docker", "sysadmin", "sysdock"]
+requires-python = ">=3.9"
+keywords = ["monitoring", "metrics", "prometheus", "security", "firewall", "docker", "sysadmin", "tui", "sysdock"]
 classifiers = [
+    "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS",
     "Operating System :: Microsoft :: Windows",
@@ -27,16 +28,23 @@ classifiers = [
     "Topic :: System :: Monitoring",
     "Topic :: System :: Systems Administration",
 ]
+# Runtime surface is kept deliberately minimal. Lower bounds are floors known to
+# work; exact versions are pinned in the committed lockfile (requirements-dev.txt).
 dependencies = [
-    "psutil>=5.8.0",
-    "rich>=12.0.0",
-    "click>=7.0",
+    "psutil>=5.9.0",
+    "rich>=13.0.0",
+    "click>=8.0.0",
 ]
 
 [project.optional-dependencies]
-docker = ["docker>=5.0.0"]
-server = ["flask>=2.0"]
-all    = ["docker>=5.0.0", "flask>=2.0"]
+docker = ["docker>=6.0.0"]
+dev = [
+    "ruff>=0.6.0",
+    "mypy>=1.11.0,<2.0",
+    "pytest>=8.0.0",
+    "pytest-cov>=5.0.0",
+    "pre-commit>=3.7.0",
+]
 
 [project.scripts]
 sysdock = "sysdock.cli:main"
@@ -45,6 +53,68 @@ sysdock = "sysdock.cli:main"
 Homepage = "https://github.com/Kavyvachhani/SysDock"
 Issues   = "https://github.com/Kavyvachhani/SysDock/issues"
 
+[tool.setuptools.dynamic]
+version = { attr = "sysdock.__version__" }
+
 [tool.setuptools.packages.find]
 where   = ["."]
 include = ["sysdock*"]
+
+# ── Ruff (lint + format) ──────────────────────────────────────────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+extend-exclude = ["platforms", ".venv", "build", "dist"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "C4", "SIM"]
+ignore = [
+    "E501",   # line length is handled by the formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests may use asserts and subprocess freely.
+"tests/**" = ["S101", "S603", "S607"]
+# Legacy modules are linted lightly until they are rewritten in later phases
+# (server -> Phase 4, collectors -> Phases 1-3, dashboard -> TUI). New code in
+# sysdock/core is held to the full rule set with mypy --strict on top.
+"sysdock/server.py" = ["S", "C416", "UP036", "SIM105"]
+"sysdock/collectors/**" = ["S", "B023", "E731", "E741", "SIM105", "SIM108"]
+"sysdock/display/**" = ["S", "E741", "F841", "SIM105", "SIM108"]
+# cli.py: the install/start/service commands (bind defaults, chmod, cleanup)
+# are reworked in Phases 4/7 when the bind/auth model lands.
+"sysdock/cli.py" = ["S603", "S607", "S103", "S104", "S110"]
+
+# ── mypy (type checking) ──────────────────────────────────────────────────────
+# Strict on the new core; legacy modules are added as they are rewritten per phase.
+[tool.mypy]
+python_version = "3.9"
+# Strict on the new audited foundation. Legacy modules (cli command bodies,
+# server, collectors, display) are added to this list as each is rewritten in
+# its phase, so the typed surface only ever grows.
+files = ["sysdock/core"]
+strict = true
+warn_unused_configs = true
+warn_redundant_casts = true
+no_implicit_reexport = true
+
+[[tool.mypy.overrides]]
+# Optional/third-party deps without stubs that core touches behind try/except.
+module = [
+    "psutil",
+    "docker",
+]
+ignore_missing_imports = true
+
+# ── pytest + coverage ─────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+
+[tool.coverage.run]
+source = ["sysdock/core"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
