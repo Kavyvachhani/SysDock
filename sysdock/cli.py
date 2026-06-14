@@ -142,6 +142,43 @@ def _pct_color(value: float | None) -> Text:
     return Text(f"{v:.1f}%", style=style)
 
 
+def _bar(value: float | None, width: int = 16) -> Text:
+    """A compact colored usage bar like htop/btop."""
+    if value is None:
+        return Text("─" * width, style="dim")
+    v = max(0.0, min(100.0, float(value)))
+    filled = int(round(v / 100.0 * width))
+    color = "red" if v >= 90 else "yellow" if v >= 70 else "green"
+    bar = Text()
+    bar.append("█" * filled, style=color)
+    bar.append("░" * (width - filled), style="dim")
+    return bar
+
+
+def _core_cell(index: int, pct: float) -> Text:
+    cell = Text()
+    cell.append(f"{index:>2} ", style="dim")
+    cell.append_text(_bar(pct, width=8))
+    cell.append(f" {pct:3.0f}%", style="dim")
+    return cell
+
+
+def _per_core_bars(per_core: list[float], columns: int = 4) -> Table:
+    """Render per-core CPU as an aligned grid of small bars."""
+    grid = Table.grid(padding=(0, 2))
+    for _ in range(columns):
+        grid.add_column()
+    row: list[Text] = []
+    for i, pct in enumerate(per_core):
+        row.append(_core_cell(i, pct))
+        if len(row) == columns:
+            grid.add_row(*row)
+            row = []
+    if row:
+        grid.add_row(*(row + [Text("")] * (columns - len(row))))
+    return grid
+
+
 def _render_snapshot(snap, top: int) -> None:
     host, cpu, mem = snap.host, snap.cpu, snap.memory
 
@@ -169,7 +206,18 @@ def _render_snapshot(snap, top: int) -> None:
     )
     if mem.swap_total:
         info.add_row("Swap", _pct_color(mem.swap_percent))
+    info.add_row("Mem", _bar(mem.percent, width=30))
     console.print(Panel(info, title="SysDock — System", border_style="cyan", title_align="left"))
+
+    if cpu.per_core_percent:
+        console.print(
+            Panel(
+                _per_core_bars(cpu.per_core_percent),
+                title="Per-core CPU",
+                border_style="cyan",
+                title_align="left",
+            )
+        )
 
     if snap.disk.partitions:
         dt = Table(box=box.ROUNDED, title="Disks", title_style="bold yellow")
@@ -257,10 +305,40 @@ def _render_snapshot(snap, top: int) -> None:
     elif snap.docker.reason and "disabled" not in snap.docker.reason:
         console.print(f"[dim]Docker: {snap.docker.reason}[/dim]")
 
+    _render_gpu(snap.gpu)
     _render_security(snap.security)
 
     if snap.errors:
         console.print(f"[yellow]Collector warnings:[/yellow] {', '.join(snap.errors)}")
+
+
+def _render_gpu(gpu) -> None:
+    # Absent vendor => hide the panel entirely (never an error).
+    if not gpu.available or not gpu.devices:
+        return
+    gt = Table(box=box.ROUNDED, title="GPU", title_style="bold bright_magenta")
+    gt.add_column("Vendor", style="dim")
+    gt.add_column("Name")
+    gt.add_column("Util", justify="right")
+    gt.add_column("Load", justify="left")
+    gt.add_column("VRAM", justify="right")
+    gt.add_column("Temp", justify="right")
+    gt.add_column("Power", justify="right")
+    for d in gpu.devices:
+        vram = "—"
+        if d.mem_total:
+            used = _fmt_bytes(d.mem_used) if d.mem_used is not None else "?"
+            vram = f"{used} / {_fmt_bytes(d.mem_total)}"
+        gt.add_row(
+            d.vendor,
+            d.name,
+            _pct_color(d.util_percent),
+            _bar(d.util_percent, width=12),
+            vram,
+            f"{d.temp_c:.0f}°C" if d.temp_c is not None else "—",
+            f"{d.power_w:.0f}W" if d.power_w is not None else "—",
+        )
+    console.print(gt)
 
 
 def _avail(available: bool, reason: str) -> Text:

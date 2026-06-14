@@ -31,6 +31,8 @@ from sysdock.core.collectors.host import HostCollector, HostSample
 from sysdock.core.collectors.memory import MemoryCollector, MemorySample
 from sysdock.core.collectors.network import NetworkCollector, NetworkSample
 from sysdock.core.collectors.processes import ProcessCollector, ProcessSample
+from sysdock.core.gpu import GpuCollector
+from sysdock.core.gpu.schema import GpuSample
 from sysdock.core.logging import get_logger
 from sysdock.core.security import SecurityCollector
 from sysdock.core.security.schema import SecuritySample
@@ -53,6 +55,7 @@ class Snapshot:
     processes: ProcessSample
     docker: DockerSample
     security: SecuritySample
+    gpu: GpuSample
     collection_ms: float = 0.0
     errors: dict[str, str] = field(default_factory=dict)
 
@@ -72,6 +75,7 @@ class SnapshotProvider:
         top_n: int = 15,
         enable_docker: bool = True,
         enable_security: bool = True,
+        enable_gpu: bool = True,
     ) -> None:
         self.ttl = ttl
         self.interval = interval
@@ -83,6 +87,7 @@ class SnapshotProvider:
         self._processes = ProcessCollector(top_n=top_n)
         self._docker = DockerCollector() if enable_docker else None
         self._security = SecurityCollector() if enable_security else None
+        self._gpu = GpuCollector() if enable_gpu else None
 
         self._snapshot: Snapshot | None = None
         self._collected_at: float = 0.0
@@ -112,6 +117,8 @@ class SnapshotProvider:
             self._docker.prime()
         if self._security is not None:
             self._security.prime()
+        if self._gpu is not None:
+            self._gpu.prime()
         time.sleep(0.1)
         self._primed = True
 
@@ -143,6 +150,7 @@ class SnapshotProvider:
             security = _safe("security", self._security.collect, SecuritySample())
         else:
             security = SecuritySample()
+        gpu = _safe("gpu", self._gpu.collect, GpuSample()) if self._gpu is not None else GpuSample()
 
         now = time.time()
         return Snapshot(
@@ -156,6 +164,7 @@ class SnapshotProvider:
             processes=processes,
             docker=docker,
             security=security,
+            gpu=gpu,
             collection_ms=round((time.monotonic() - start) * 1000, 2),
             errors=errors,
         )

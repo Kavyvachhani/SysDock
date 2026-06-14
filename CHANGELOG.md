@@ -8,6 +8,26 @@ All notable changes to SysDock are documented here. This project adheres to
 
 Hardening toward a production-ready v2.
 
+### Phase 3 — GPU panel (capability-gated, multi-vendor)
+
+#### Added
+- `sysdock.core.gpu`: one normalized GPU schema across vendors (util, VRAM,
+  temperature, power, per-process GPU memory). When no supported GPU is present
+  the panel is hidden — never an error.
+- **NVIDIA** via `nvidia-ml-py` (pynvml): utilisation, VRAM, temp, power,
+  per-process GPU memory — every NVML call guarded.
+- **AMD** via `rocm-smi --json`; **Intel** via `intel_gpu_top -J`; **Apple
+  Silicon** via `system_profiler` (name, core count, unified-memory pool). Live
+  utilisation on Apple Silicon needs elevation, so it is reported as unknown
+  rather than guessed; the device is still shown.
+- GPU is folded into the shared snapshot with a TTL cache and runs every backend
+  behind a guard, so a broken/abnormal driver can never crash the snapshot.
+- New optional extra: `pip install sysdock[gpu]` (pulls nvidia-ml-py).
+
+#### Changed
+- `sysdock status` UI: added per-core CPU bars and a GPU panel; memory now shows
+  a usage bar.
+
 ### Phase 2 — Security panel (the wedge), subprocess-safe
 
 #### Added

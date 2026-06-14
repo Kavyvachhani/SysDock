@@ -15,9 +15,9 @@ _CEILING_MS = float(os.environ.get("SYSDOCK_BENCH_CEILING_MS", "1500"))
 
 
 def _provider() -> SnapshotProvider:
-    # Docker/security are exercised in their own test modules; disabling them
+    # Docker/security/GPU are exercised in their own test modules; disabling them
     # here keeps these snapshot tests fast and focused on cache/coalescing/perf.
-    return SnapshotProvider(ttl=5.0, enable_docker=False, enable_security=False)
+    return SnapshotProvider(ttl=5.0, enable_docker=False, enable_security=False, enable_gpu=False)
 
 
 def test_get_returns_full_snapshot_and_serialises():
@@ -78,7 +78,9 @@ def test_concurrent_reads_cause_single_collection():
 
 
 def test_background_timer_refreshes_then_stops():
-    p = SnapshotProvider(ttl=0.0, interval=0.1, enable_docker=False, enable_security=False)
+    p = SnapshotProvider(
+        ttl=0.0, interval=0.1, enable_docker=False, enable_security=False, enable_gpu=False
+    )
     p.start()
     time.sleep(0.45)
     p.stop()
