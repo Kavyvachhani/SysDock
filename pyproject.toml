@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=64", "wheel"]
+requires = ["setuptools>=82.0.1", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -37,13 +37,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-docker = ["docker>=6.0.0"]
+docker = ["docker>=7.1.0"]
 dev = [
     "ruff>=0.6.0",
     "mypy>=1.11.0,<2.0",
     "pytest>=8.0.0",
     "pytest-cov>=5.0.0",
-    "pre-commit>=3.7.0",
+    "pre-commit>=4.3.0",
 ]
 
 [project.scripts]
