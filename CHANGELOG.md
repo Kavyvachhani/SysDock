@@ -6,9 +6,33 @@ All notable changes to SysDock are documented here. This project adheres to
 
 ## [Unreleased]
 
-Hardening toward a production-ready v2. **Phase 0 — Foundation & hardening harness.**
+Hardening toward a production-ready v2.
 
-### Added
+### Phase 1 — Portable metrics core + shared snapshot
+
+#### Added
+- `sysdock.core.collectors`: portable, psutil-based collectors for CPU
+  (per-core, htop-style delta sampling, load avg), virtual+swap memory,
+  per-partition disk usage + delta-based I/O rates, per-NIC throughput, the
+  process table, host info, and an optional Docker collector.
+- `sysdock.core.snapshot.SnapshotProvider`: the one shared snapshot every
+  surface reads — timer-collected, **TTL-cached**, and **request-coalescing**
+  (N concurrent readers cause a single collection, not N). Static facts (core
+  counts, partition/NIC lists) are cached; rates are delta-based.
+- Docker collector is cross-platform via the Docker SDK and degrades cleanly to
+  a typed "unavailable" when the SDK or daemon is absent; the `docker stats`
+  CPU/memory math (page-cache subtracted) is preserved and fixture-tested.
+- Performance gate: a single-collection benchmark asserts a ceiling
+  (`make bench`, run in CI; override via `SYSDOCK_BENCH_CEILING_MS`).
+
+#### Changed
+- `sysdock status` now reads the shared snapshot and emits a full, validated
+  JSON document (`--json`); added `--top N` and `--no-docker`. Removed the
+  `--section` flag (superseded by the unified snapshot).
+
+### Phase 0 — Foundation & hardening harness
+
+#### Added
 - `sysdock.core.proc`: the single audited subprocess helper — argument lists
   only, never a shell, mandatory timeout, tolerant of missing binaries and
   non-zero exits; returns a typed `ProcResult` and never raises on command
@@ -30,17 +54,17 @@ Hardening toward a production-ready v2. **Phase 0 — Foundation & hardening har
 - `SECURITY.md` (bind/auth model, subprocess safety, disclosure) and
   `CONTRIBUTING.md`.
 
-### Changed
+#### Changed
 - Single version source of truth in `sysdock/__init__.py` (now `2.0.0.dev0`);
   the server no longer hardcodes a divergent version.
 - Migrated packaging to PEP 621; Python floor raised to **3.9** (CI tests 3.9 and
   3.12). Removed the duplicate, version-drifted `setup.py`.
 
-### Security
+#### Security
 - Removed a `shell=True` subprocess invocation in the Windows service install
   path; the task command is now passed as a single non-shell argv entry.
 
-### Removed
+#### Removed
 - Committed macOS AppleDouble (`._*`) metadata files; now git-ignored.
 
 ## [1.4.0] - 2026-03-25

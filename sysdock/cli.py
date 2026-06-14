@@ -108,218 +108,157 @@ def start(host, port, verbose):
 
 
 @cli.command()
-@click.option("--json", "as_json", is_flag=True, help="Raw JSON output")
-@click.option(
-    "--section",
-    type=click.Choice(["system", "disk", "processes", "network", "docker", "security", "all"]),
-    default="all",
-    show_default=True,
-)
-def status(as_json, section):
-    """Print a one-shot status snapshot to the terminal."""
-    from sysdock.collectors import (
-        disk as _disk,
-    )
-    from sysdock.collectors import (
-        docker_collector as _docker,
-    )
-    from sysdock.collectors import (
-        network as _net,
-    )
-    from sysdock.collectors import (
-        processes as _proc,
-    )
-    from sysdock.collectors import (
-        security as _sec,
-    )
-    from sysdock.collectors import (
-        system as _sys,
-    )
+@click.option("--json", "as_json", is_flag=True, help="Raw JSON output of the full snapshot.")
+@click.option("--top", default=10, show_default=True, help="Number of top processes to show.")
+@click.option("--no-docker", is_flag=True, help="Skip Docker collection.")
+def status(as_json, top, no_docker):
+    """Print a one-shot snapshot of the system from the shared core."""
+    from sysdock.core.snapshot import SnapshotProvider
 
-    all_collectors = {
-        "system": _sys,
-        "disk": _disk,
-        "processes": _proc,
-        "network": _net,
-        "docker": _docker,
-        "security": _sec,
-    }
-    targets = all_collectors if section == "all" else {section: all_collectors[section]}
-
-    data = {}
-    with console.status("[bold cyan]Collecting metrics...[/bold cyan]"):
-        for key, mod in targets.items():
-            try:
-                data[key] = mod.collect_all()
-            except Exception as e:
-                data[key] = {"error": str(e)}
+    provider = SnapshotProvider(top_n=max(1, top), enable_docker=not no_docker)
+    snap = provider.get(force=True)
 
     if as_json:
-        click.echo(json.dumps(data, indent=2, default=str))
+        click.echo(json.dumps(snap.to_dict(), indent=2, default=str))
         return
 
-    _print_rich(data)
+    _render_snapshot(snap, top)
 
 
-def _pct_color(v):
-    if v is None:
+def _fmt_bytes(num: float) -> str:
+    value = float(num)
+    for unit in ("B", "K", "M", "G", "T", "P"):
+        if abs(value) < 1024.0:
+            return f"{value:.0f}{unit}" if unit == "B" else f"{value:.1f}{unit}"
+        value /= 1024.0
+    return f"{value:.1f}E"
+
+
+def _pct_color(value: float | None) -> Text:
+    if value is None:
         return Text("?", style="dim")
-    v = float(v)
+    v = float(value)
     style = "bold red" if v >= 90 else "bold yellow" if v >= 70 else "bold green"
     return Text(f"{v:.1f}%", style=style)
 
 
-def _mb(mb):
-    if mb is None:
-        return "?"
-    mb = float(mb)
-    return f"{mb / 1024:.2f}G" if mb >= 1024 else f"{mb:.0f}M"
+def _render_snapshot(snap, top: int) -> None:
+    host, cpu, mem = snap.host, snap.cpu, snap.memory
 
+    info = Table.grid(padding=(0, 2))
+    info.add_column(style="dim")
+    info.add_column()
+    info.add_row("Host", Text(host.hostname, style="bold"))
+    info.add_row("OS", f"{host.os} ({host.arch})")
+    info.add_row("Uptime", host.uptime_human)
+    if cpu.load_avg:
+        info.add_row("Load", " / ".join(f"{x:.2f}" for x in cpu.load_avg))
+    info.add_row(
+        "CPU",
+        Text.assemble(
+            _pct_color(cpu.total_percent),
+            Text(f"  ({cpu.logical_cores} cores) {cpu.model}", style="dim"),
+        ),
+    )
+    info.add_row(
+        "Memory",
+        Text.assemble(
+            _pct_color(mem.percent),
+            Text(f"  {_fmt_bytes(mem.used)} / {_fmt_bytes(mem.total)}", style="dim"),
+        ),
+    )
+    if mem.swap_total:
+        info.add_row("Swap", _pct_color(mem.swap_percent))
+    console.print(Panel(info, title="SysDock — System", border_style="cyan", title_align="left"))
 
-def _print_rich(data):
-    if "system" in data:
-        s = data["system"]
-        t = Table(box=box.ROUNDED, title="System", title_style="bold cyan", show_header=False)
-        t.add_column("Key", style="dim", width=18)
-        t.add_column("Value")
-        h, cpu, mem, load, up = (
-            s.get("hostname", {}),
-            s.get("cpu", {}),
-            s.get("memory", {}),
-            s.get("load", {}),
-            s.get("uptime", {}),
-        )
-        t.add_row("Hostname", Text(h.get("hostname", "?"), style="bold"))
-        t.add_row("OS", h.get("os", "?"))
-        t.add_row("Kernel", h.get("kernel", "?"))
-        t.add_row("Arch", h.get("arch", "?"))
-        t.add_row("Uptime", up.get("uptime_human", "?"))
-        t.add_row(
-            "Load avg",
-            "{} / {} / {}".format(load.get("load1"), load.get("load5"), load.get("load15")),
-        )
-        t.add_row("CPU", _pct_color(cpu.get("usage_total")))
-        t.add_row(
-            "CPU cores",
-            "{} logical / {} physical".format(cpu.get("logical_cores"), cpu.get("physical_cores")),
-        )
-        t.add_row(
-            "RAM used",
-            "{} of {}  ({})".format(
-                _mb(mem.get("used_mb")), _mb(mem.get("total_mb")), _pct_color(mem.get("percent"))
-            ),
-        )
-        t.add_row("RAM avail", _mb(mem.get("available_mb")))
-        t.add_row("Swap", _pct_color(mem.get("swap_percent")))
-        console.print(t)
-
-    if "disk" in data:
-        t = Table(box=box.ROUNDED, title="Disk", title_style="bold yellow")
-        t.add_column("Mount", style="cyan")
-        t.add_column("Device", style="dim")
-        t.add_column("FS", style="dim")
-        t.add_column("Used", justify="right")
-        t.add_column("Free", justify="right")
-        t.add_column("Total", justify="right")
-        t.add_column("%", justify="right")
-        for p in data["disk"].get("partitions", []):
-            pct = p.get("percent", 0)
-            col = "bold red" if pct >= 90 else "bold yellow" if pct >= 75 else "bold green"
-            t.add_row(
-                p["mountpoint"],
-                p["device"][-20:],
-                p["fstype"],
-                "{:.1f}G".format(p["used_gb"]),
-                "{:.1f}G".format(p["free_gb"]),
-                "{:.1f}G".format(p["total_gb"]),
-                Text(f"{pct:.0f}%", style=col),
+    if snap.disk.partitions:
+        dt = Table(box=box.ROUNDED, title="Disks", title_style="bold yellow")
+        dt.add_column("Mount", style="cyan")
+        dt.add_column("FS", style="dim")
+        dt.add_column("Used", justify="right")
+        dt.add_column("Total", justify="right")
+        dt.add_column("%", justify="right")
+        for p in snap.disk.partitions:
+            dt.add_row(
+                p.mountpoint,
+                p.fstype,
+                _fmt_bytes(p.used),
+                _fmt_bytes(p.total),
+                _pct_color(p.percent),
             )
-        console.print(t)
+        console.print(dt)
 
-    if "network" in data:
-        t = Table(box=box.ROUNDED, title="Network", title_style="bold green")
-        t.add_column("Interface", style="cyan")
-        t.add_column("Status")
-        t.add_column("IP")
-        t.add_column("RX MB/s", justify="right")
-        t.add_column("TX MB/s", justify="right")
-        for iface in data["network"].get("interfaces", []):
-            ips = ", ".join(
-                a["address"] for a in iface.get("addresses", []) if a.get("type") == "ipv4"
+    up_nics = [
+        n
+        for n in snap.network.interfaces
+        if n.is_up and (n.rx_bytes_per_s or n.tx_bytes_per_s or n.addresses)
+    ]
+    if up_nics:
+        nt = Table(box=box.ROUNDED, title="Network", title_style="bold green")
+        nt.add_column("Interface", style="cyan")
+        nt.add_column("IP")
+        nt.add_column("RX/s", justify="right")
+        nt.add_column("TX/s", justify="right")
+        for n in up_nics:
+            nt.add_row(
+                n.name,
+                ", ".join(n.addresses) or "—",
+                _fmt_bytes(n.rx_bytes_per_s) + "/s",
+                _fmt_bytes(n.tx_bytes_per_s) + "/s",
             )
-            up = iface.get("is_up", False)
-            t.add_row(
-                iface["interface"],
-                Text("UP", style="bold green") if up else Text("DOWN", style="bold red"),
-                ips or "—",
-                "{:.3f}".format(iface.get("rx_mb_s", 0)),
-                "{:.3f}".format(iface.get("tx_mb_s", 0)),
+        console.print(nt)
+
+    if snap.processes.top_by_cpu:
+        pt = Table(
+            box=box.ROUNDED,
+            title=f"Top {min(top, len(snap.processes.top_by_cpu))} processes by CPU "
+            f"({snap.processes.count} total)",
+            title_style="bold blue",
+        )
+        pt.add_column("PID", justify="right", style="dim")
+        pt.add_column("User", width=12)
+        pt.add_column("CPU%", justify="right")
+        pt.add_column("MEM%", justify="right")
+        pt.add_column("RSS", justify="right")
+        pt.add_column("Name")
+        for proc_info in snap.processes.top_by_cpu[:top]:
+            pt.add_row(
+                str(proc_info.pid),
+                (proc_info.username or "?")[:12],
+                _pct_color(proc_info.cpu_percent),
+                _pct_color(proc_info.memory_percent),
+                _fmt_bytes(proc_info.rss),
+                proc_info.name[:40],
             )
-        console.print(t)
+        console.print(pt)
 
-    if "processes" in data:
-        procs = data["processes"].get("top_by_cpu", [])[:12]
-        t = Table(box=box.ROUNDED, title="Top Processes (CPU)", title_style="bold blue")
-        t.add_column("User", width=12)
-        t.add_column("CPU%", justify="right")
-        t.add_column("MEM%", justify="right")
-        t.add_column("RSS", justify="right")
-        t.add_column("THR", justify="right")
-        t.add_column("Command")
-        for p in procs:
-            t.add_row(
-                (p.get("user") or "?")[:12],
-                _pct_color(p["cpu_pct"]),
-                _pct_color(p["mem_pct"]),
-                "{:.0f}M".format(p.get("rss_mb", 0)),
-                str(p.get("threads", 0)),
-                (p.get("cmd") or p.get("name", "?"))[:55],
+    if snap.docker.available:
+        dk = Table(
+            box=box.ROUNDED,
+            title=f"Docker — {snap.docker.running}/{snap.docker.total} running",
+            title_style="bold cyan",
+        )
+        dk.add_column("Name", style="cyan")
+        dk.add_column("Image", style="dim")
+        dk.add_column("Status")
+        dk.add_column("CPU%", justify="right")
+        dk.add_column("MEM", justify="right")
+        for c in snap.docker.containers:
+            running = c.status == "running"
+            s = c.stats
+            dk.add_row(
+                c.name[:24],
+                c.image[:28],
+                Text(c.status, style="bold green" if running else "dim"),
+                _pct_color(s.cpu_percent) if s else Text("—", style="dim"),
+                _fmt_bytes(s.mem_used) if s else Text("—", style="dim"),
             )
-        console.print(t)
+        console.print(dk)
+    elif snap.docker.reason and "disabled" not in snap.docker.reason:
+        console.print(f"[dim]Docker: {snap.docker.reason}[/dim]")
 
-    if "docker" in data:
-        d = data["docker"]
-        if d.get("available"):
-            t = Table(box=box.ROUNDED, title="Docker Containers", title_style="bold cyan")
-            t.add_column("Name", style="cyan")
-            t.add_column("Image", style="dim")
-            t.add_column("State")
-            t.add_column("CPU%", justify="right")
-            t.add_column("MEM%", justify="right")
-            t.add_column("MEM", justify="right")
-            for c in d.get("containers", []):
-                state = c.get("state") or c.get("status", "?")
-                is_run = state == "running"
-                stats = c.get("stats") or {}
-                t.add_row(
-                    c.get("name", "?")[:28],
-                    c.get("image", "?")[:28],
-                    Text(state, style="bold green" if is_run else "dim"),
-                    _pct_color(stats.get("cpu_pct")) if is_run else Text("—", "dim"),
-                    _pct_color(stats.get("mem_pct")) if is_run else Text("—", "dim"),
-                    _mb(stats.get("mem_used_mb")) if is_run else Text("—", "dim"),
-                )
-            console.print(t)
-
-            # Also print images if available
-            images = d.get("images", [])
-            if images:
-                ti = Table(box=box.ROUNDED, title="Docker Images", title_style="bold cyan")
-                ti.add_column("ID", style="dim")
-                ti.add_column("Tags", style="cyan")
-                ti.add_column("Size", justify="right")
-                ti.add_column("Created", style="dim")
-                for img in images[:15]:
-                    tags = ", ".join(img.get("tags") or ["<none>"])
-                    size = (
-                        "{:.0f}M".format(img["size_mb"])
-                        if img.get("size_mb")
-                        else img.get("size", "?")
-                    )
-                    ti.add_row(img.get("id", "?"), tags, size, img.get("created", "?")[:10])
-                console.print(ti)
-        else:
-            console.print("[dim]Docker: {} [/dim]".format(d.get("error", "not available")))
+    if snap.errors:
+        console.print(f"[yellow]Collector warnings:[/yellow] {', '.join(snap.errors)}")
 
 
 # ─── check ────────────────────────────────────────────────────────────────────

@@ -94,9 +94,11 @@ sysdock              # open live dashboard (default)
 sysdock dash         # same as above
 sysdock start        # start metrics HTTP server on :5010
 sysdock status       # one-shot snapshot (rich table)
-sysdock status --json               # raw JSON
-sysdock status --section docker     # Docker only
-sysdock check        # verify all dependencies
+sysdock status --json               # full snapshot as JSON
+sysdock status --top 20             # show more processes
+sysdock status --no-docker          # skip Docker collection
+sysdock check        # report detected capabilities (--json for raw)
+sysdock version      # print version
 sysdock install      # install as a systemd background service (requires root)
 sysdock uninstall    # remove background service (requires root)
 ```
