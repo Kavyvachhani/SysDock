@@ -8,6 +8,26 @@ All notable changes to SysDock are documented here. This project adheres to
 
 Hardening toward a production-ready v2.
 
+### Phase 2 — Security panel (the wedge), subprocess-safe
+
+#### Added
+- `sysdock.core.security`: one normalized cross-OS schema —
+  `firewall` (enabled/default_policy/backend), `open_ports[]`,
+  `failed_auth[]`, `intrusion[]`. A capability that isn't present yields a typed
+  `available=False` section with a reason — never `null`, never a crash.
+- **Linux** backend: ufw → nftables → iptables; fail2ban-client; failed SSH auth
+  from journald or `/var/log/auth.log`.
+- **macOS** backend: Application Firewall via `socketfilterfw` (no sudo), `pfctl`
+  where readable; failed auth from the unified log.
+- **Windows** backend: `Get-NetFirewallProfile` (JSON) with `netsh` fallback;
+  failed logons from the Security event log (Event ID 4625).
+- Open ports are portable via psutil (no subprocess); degrade cleanly where the
+  OS requires elevation to enumerate sockets.
+- All commands run through `core.proc` (no shell, timeouts, tolerant); every
+  parser is pure and **fixture-tested for all three OSes** on any CI runner.
+- Security is folded into the shared snapshot with its own short-TTL cache, so it
+  doesn't run subprocesses on every tick; `sysdock status` shows a security panel.
+
 ### Phase 1 — Portable metrics core + shared snapshot
 
 #### Added

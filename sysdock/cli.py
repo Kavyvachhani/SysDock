@@ -257,8 +257,67 @@ def _render_snapshot(snap, top: int) -> None:
     elif snap.docker.reason and "disabled" not in snap.docker.reason:
         console.print(f"[dim]Docker: {snap.docker.reason}[/dim]")
 
+    _render_security(snap.security)
+
     if snap.errors:
         console.print(f"[yellow]Collector warnings:[/yellow] {', '.join(snap.errors)}")
+
+
+def _avail(available: bool, reason: str) -> Text:
+    if available:
+        return Text("available", style="bold green")
+    return Text(f"unavailable — {reason}", style="dim")
+
+
+def _render_security(sec) -> None:
+    fw = sec.firewall
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(style="dim")
+    grid.add_column()
+    if fw.available:
+        state = "enabled" if fw.enabled else "disabled" if fw.enabled is False else "unknown"
+        style = "bold green" if fw.enabled else "bold red" if fw.enabled is False else "yellow"
+        detail = fw.backend + (f", default {fw.default_policy}" if fw.default_policy else "")
+        grid.add_row(
+            "Firewall",
+            Text.assemble(Text(state, style=style), Text(f"  ({detail})", style="dim")),
+        )
+    else:
+        grid.add_row("Firewall", _avail(False, fw.reason))
+
+    op = sec.open_ports
+    if op.available:
+        listening = ", ".join(sorted({f"{p.port}/{p.proto}" for p in op.ports})[:12]) or "none"
+        grid.add_row("Open ports", Text(f"{len(op.ports)} listening: {listening}"))
+    else:
+        grid.add_row("Open ports", _avail(False, op.reason))
+
+    fa = sec.failed_auth
+    grid.add_row(
+        "Failed auth",
+        Text(f"{len(fa.events)} recent") if fa.available else _avail(False, fa.reason),
+    )
+
+    intr = sec.intrusion
+    if intr.available:
+        banned = sum(1 for b in intr.blocks if b.source)
+        jails = len({b.jail for b in intr.blocks})
+        grid.add_row("Intrusion", Text(f"{banned} banned across {jails} jail(s)"))
+    else:
+        grid.add_row("Intrusion", _avail(False, intr.reason))
+
+    console.print(
+        Panel(grid, title="SysDock — Security", border_style="magenta", title_align="left")
+    )
+
+    if fa.available and fa.events:
+        at = Table(box=box.ROUNDED, title="Recent failed auth", title_style="bold magenta")
+        at.add_column("When", style="dim")
+        at.add_column("User")
+        at.add_column("Source")
+        for ev in fa.events[:8]:
+            at.add_row(ev.timestamp or "?", ev.user or "?", ev.source or "?")
+        console.print(at)
 
 
 # ─── check ────────────────────────────────────────────────────────────────────

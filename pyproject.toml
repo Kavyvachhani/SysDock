@@ -73,8 +73,8 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# Tests may use asserts and subprocess freely.
-"tests/**" = ["S101", "S603", "S607"]
+# Tests may use asserts, subprocess, and bind-like literals in fixture data.
+"tests/**" = ["S101", "S603", "S607", "S104"]
 # Legacy modules are linted lightly until they are rewritten in later phases
 # (server -> Phase 4, collectors -> Phases 1-3, dashboard -> TUI). New code in
 # sysdock/core is held to the full rule set with mypy --strict on top.
