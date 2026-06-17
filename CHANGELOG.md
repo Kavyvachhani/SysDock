@@ -6,7 +6,33 @@ All notable changes to SysDock are documented here. This project adheres to
 
 ## [Unreleased]
 
-Hardening toward a production-ready v2.
+## [2.0.0] — 2026-06-17
+
+Production-ready v2: a hardened, cross-platform rewrite. **Breaking:** the old
+unauthenticated `:5010` metrics server (`sysdock start`) is replaced by
+`sysdock web` (loopback-only by default, bearer auth when exposed) on port
+`8787`, with data moved to `/api/snapshot`, `/api/stream`, and `/metrics`.
+
+### Phase 4 — web dashboard, JSON API & live stream (stdlib only)
+
+#### Added
+- `sysdock web`: a self-contained server (Python standard library only — no web
+  framework) exposing the built-in dashboard (`/`), a JSON snapshot
+  (`/api/snapshot`), a live Server-Sent Events stream (`/api/stream`), a
+  Prometheus endpoint (`/metrics`), and a `/health` probe — all reading from one
+  shared `SnapshotProvider`, so N clients never trigger N collections.
+- Security model: binds `127.0.0.1` by default; any non-loopback bind requires a
+  bearer token (auto-generated, printed once, persisted, rotatable with
+  `--regen-token`). Strict security headers + locked-down CSP, no wildcard CORS,
+  tokens never in URLs or logs, and per-client-IP rate limiting. `--no-auth`
+  guarded with a loud warning for trusted-network use only.
+
+#### Changed
+- `sysdock start` is now a hidden, deprecated alias for `sysdock web`.
+
+#### Removed
+- Legacy `sysdock/server.py` (the unauthenticated `:5010` metrics server),
+  replaced by the hardened `sysdock.web` package.
 
 ### Phase 3 — GPU panel (capability-gated, multi-vendor)
 

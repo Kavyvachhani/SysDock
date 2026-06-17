@@ -92,7 +92,7 @@ sysdock
 ```bash
 sysdock              # open live dashboard (default)
 sysdock dash         # same as above
-sysdock start        # start metrics HTTP server on :5010
+sysdock web          # serve web dashboard + JSON API + live stream on 127.0.0.1:8787
 sysdock status       # one-shot snapshot (rich table)
 sysdock status --json               # full snapshot as JSON
 sysdock status --top 20             # show more processes
@@ -105,21 +105,33 @@ sysdock uninstall    # remove background service (requires root)
 
 ---
 
-## 📡 HTTP Data API
+## 📡 Web Dashboard & HTTP API
 
-Start the API server in the background, then pull data securely:
+`sysdock web` serves a built-in dashboard, a JSON snapshot API, a live SSE
+stream, and a Prometheus endpoint — all from a single shared snapshot (N clients
+never trigger N collections). It uses the Python standard library only; no web
+framework is pulled in.
 
 ```bash
-sysdock start --port 5010
+sysdock web                       # 127.0.0.1:8787 — loopback only, no auth needed
+sysdock web --host 0.0.0.0        # expose it — a bearer token is generated & printed once
+sysdock web --port 9000 --no-metrics
 ```
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /` | Full JSON snapshot — system, docker, processes, and security |
-| `GET /stream` | **Server-Sent Events** — pushes a live metrics update every 5 seconds |
-| `GET /health` | Basic `{"status": "ok"}` check |
+| `GET /` | Built-in web dashboard (HTML/CSS/JS) |
+| `GET /api/snapshot` | Full JSON snapshot — host, cpu, memory, disk, network, processes, docker, security, gpu |
+| `GET /api/stream` | **Server-Sent Events** — pushes a live snapshot every ~2 seconds |
+| `GET /metrics` | Prometheus text exposition (disable with `--no-metrics`) |
+| `GET /health` | Basic `{"status": "ok"}` check (always unauthenticated) |
 
-> **Security Note:** If exposing the HTTP API to the internet, always restrict port `5010` to your monitoring server's IP via AWS Security Groups, UFW, or iptables.
+> **Security:** binds `127.0.0.1` by default. Any non-loopback bind **requires a
+> bearer token** (auto-generated, printed once, persisted; rotate with
+> `--regen-token`). Responses carry strict security headers and a locked-down CSP,
+> tokens never appear in URLs or logs, and requests are rate-limited per client IP.
+> Terminate TLS with a reverse proxy and restrict the port at your firewall when
+> exposing it. `--no-auth` on a non-loopback bind is for trusted networks only.
 
 ---
 
@@ -146,7 +158,7 @@ SysDock takes immense pride in providing data that you can actually trust:
 | CentOS / RHEL (7 / 8 / 9) | ✅ Fully Supported |
 | Alpine / Arch Linux | ✅ Fully Supported |
 
-*Requires Linux `/proc` filesystem and Python 3.6 – 3.12.*
+*Cross-platform (Linux, macOS, Windows); requires Python 3.9 – 3.13.*
 
 ---
 

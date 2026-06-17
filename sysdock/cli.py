@@ -5,7 +5,7 @@ Commands
 --------
 sysdock             Open the live terminal dashboard (default — no subcommand needed)
 sysdock dash        Live terminal dashboard (like htop)
-sysdock start       Start the metrics HTTP server (port 5010)
+sysdock web         Serve the web dashboard, JSON API & live stream (port 8787)
 sysdock status      One-shot status snapshot
 sysdock check       Verify all dependencies
 sysdock install     Install as systemd service
@@ -78,30 +78,51 @@ def dash(refresh):
     run_dashboard(refresh=refresh)
 
 
-# ─── start ────────────────────────────────────────────────────────────────────
+# ─── web ──────────────────────────────────────────────────────────────────────
 
 
 @cli.command()
-@click.option("--host", default="0.0.0.0", show_default=True, help="Bind address")
-@click.option("--port", default=5010, show_default=True, help="Port to listen on")
-@click.option("--verbose", is_flag=True, help="Debug logging")
-def start(host, port, verbose):
-    """Start the metrics HTTP server on PORT."""
-    if verbose:
-        setup_logging(level="DEBUG")
+@click.option("--host", default=None, help="Bind address (default 127.0.0.1; loopback-only).")
+@click.option("--port", default=None, type=int, help="Port to listen on.")
+@click.option(
+    "--token", default=None, help="Bearer token to require (else auto-generated when exposed)."
+)
+@click.option("--regen-token", is_flag=True, help="Regenerate the persisted bearer token.")
+@click.option("--no-metrics", is_flag=True, help="Disable the /metrics endpoint.")
+@click.option(
+    "--no-auth",
+    is_flag=True,
+    help="DANGER: disable auth on a non-loopback bind (trusted networks only).",
+)
+def web(host, port, token, regen_token, no_metrics, no_auth):
+    """Serve the built-in web dashboard, JSON API, and live SSE stream.
 
-    console.print(
-        Panel.fit(
-            f"[bold cyan]{TOOL_NAME}[/bold cyan]\n"
-            "[dim]Metrics server starting on "
-            f"[green]http://{host}:{port}/[/green][/dim]\n"
-            "[dim]Press Ctrl+C to stop[/dim]",
-            border_style="cyan",
-        )
+    Binds 127.0.0.1 by default. Exposing it (e.g. --host 0.0.0.0) requires a
+    bearer token, which is auto-generated and printed once.
+    """
+    from sysdock.web import auth as web_auth
+    from sysdock.web.server import run_web
+
+    run_web(
+        host=host or web_auth.DEFAULT_HOST,
+        port=port or web_auth.DEFAULT_PORT,
+        token=token,
+        regenerate_token=regen_token,
+        enable_metrics=not no_metrics,
+        no_auth=no_auth,
     )
-    from sysdock.server import run_server
 
-    run_server(host=host, port=port)
+
+@cli.command(hidden=True)
+@click.option("--host", default=None)
+@click.option("--port", default=None, type=int)
+@click.pass_context
+def start(ctx, host, port):
+    """Deprecated alias for `web` (kept for backward compatibility)."""
+    console.print("[yellow]`sysdock start` is deprecated; use `sysdock web`.[/yellow]")
+    ctx.invoke(
+        web, host=host, port=port, token=None, regen_token=False, no_metrics=False, no_auth=False
+    )
 
 
 # ─── status ───────────────────────────────────────────────────────────────────
@@ -563,7 +584,7 @@ Categories=System;Monitor;
 
 
 @cli.command()
-@click.option("--port", default=5010, show_default=True)
+@click.option("--port", default=8787, show_default=True)
 @click.option("--host", default="0.0.0.0", show_default=True)
 def install(port, host):
     """Install SysDock as a background persistent service (requires admin/root)."""
@@ -587,7 +608,7 @@ def install(port, host):
         if is_windows:
             # No shell: the task command is passed to /tr as a single argv entry,
             # so host/port/bin_path are never interpreted by a shell.
-            tr_value = f'"{bin_path}" start --host {host} --port {port}'
+            tr_value = f'"{bin_path}" web --host {host} --port {port}'
             subprocess.run(
                 [
                     "schtasks",
@@ -620,7 +641,7 @@ def install(port, host):
     <key>ProgramArguments</key>
     <array>
         <string>{bin_path}</string>
-        <string>start</string>
+        <string>web</string>
         <string>--host</string>
         <string>{host}</string>
         <string>--port</string>
@@ -651,7 +672,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart={bin_path} start --host {host} --port {port}
+ExecStart={bin_path} web --host {host} --port {port}
 Restart=always
 RestartSec=10
 StandardOutput=journal
@@ -673,11 +694,24 @@ WantedBy=multi-user.target
                 subprocess.run(cmd, check=False, capture_output=True)
             svc_name = "systemd: sysdock.service"
 
+        from sysdock.web import auth as web_auth
+
+        auth_note = ""
+        if not web_auth.is_loopback(host):
+            auth_note = (
+                f"\n[yellow]Bind is non-loopback → bearer auth is ON.[/yellow]\n"
+                f"  A token is generated on first start (printed once to the\n"
+                f"  service log) and persisted at:\n"
+                f"    [cyan]{web_auth.token_path()}[/cyan]\n"
+                f"  Rotate it with 'sysdock web --regen-token'.\n"
+            )
+
         console.print(
             Panel.fit(
                 f"[bold green]✓  Installed and started[/bold green]\n\n"
                 f"  Service : {svc_name}\n"
-                f"  Port    : {port}\n\n"
+                f"  Port    : {port}\n"
+                f"{auth_note}\n"
                 f"  [dim]Run 'sysdock uninstall' to remove.[/dim]\n\n"
                 f"[yellow]⚠  Open port {port} only from your monitoring server[/yellow]",
                 title="SysDock Installation Complete",

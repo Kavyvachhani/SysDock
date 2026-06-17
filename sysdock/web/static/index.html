@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
+  <title>SysDock</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">Sys<span>Dock</span></div>
+    <div class="host" id="host">—</div>
+    <div class="status" id="conn">connecting…</div>
+  </header>
+
+  <div id="auth" class="auth hidden">
+    <div class="auth-box">
+      <h2>Authentication required</h2>
+      <p>This server is exposed on the network. Paste the bearer token printed
+         in the server's terminal.</p>
+      <input id="token" type="password" placeholder="bearer token" autocomplete="off" />
+      <button id="token-save">Connect</button>
+      <div id="auth-err" class="err"></div>
+    </div>
+  </div>
+
+  <main id="main" class="hidden">
+    <section class="grid">
+      <div class="card">
+        <h3>CPU <span id="cpu-total" class="badge"></span></h3>
+        <div id="cores" class="cores"></div>
+        <div class="meta" id="cpu-meta"></div>
+      </div>
+      <div class="card">
+        <h3>Memory</h3>
+        <div id="mem-bar"></div>
+        <div class="meta" id="mem-meta"></div>
+        <div id="swap-bar"></div>
+        <div class="meta" id="swap-meta"></div>
+      </div>
+      <div class="card">
+        <h3>Network</h3>
+        <div id="net" class="kv"></div>
+      </div>
+      <div class="card" id="gpu-card" style="display:none">
+        <h3>GPU</h3>
+        <div id="gpu" class="kv"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>Disks</h3>
+      <div id="disks" class="kv"></div>
+    </section>
+
+    <section class="card">
+      <h3>Security</h3>
+      <div id="security" class="kv"></div>
+    </section>
+
+    <section class="card">
+      <h3>Processes
+        <input id="proc-filter" class="filter" placeholder="filter by name/user…" />
+      </h3>
+      <table id="proc-table">
+        <thead>
+          <tr>
+            <th data-key="pid">PID</th>
+            <th data-key="username">User</th>
+            <th data-key="cpu_percent" class="sorted">CPU%</th>
+            <th data-key="memory_percent">MEM%</th>
+            <th data-key="rss">RSS</th>
+            <th data-key="name">Name</th>
+          </tr>
+        </thead>
+        <tbody id="proc-body"></tbody>
+      </table>
+    </section>
+
+    <footer id="foot"></footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
