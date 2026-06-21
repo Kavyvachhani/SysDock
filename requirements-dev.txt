@@ -15,5 +15,5 @@ Pygments==2.20.0
 pytest==9.1.0
 pytest-cov==7.1.0
 rich==15.0.0
-ruff==0.15.17
+ruff==0.15.18
 typing_extensions==4.15.0
